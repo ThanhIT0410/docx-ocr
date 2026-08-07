@@ -1,0 +1,35 @@
+-- ============================================================================
+-- Processor backend — drops `exams.progress`.
+--
+-- Unlike 0002's claim columns, `progress` is NOT a Processor-only
+-- addition — it's part of the original shared schema
+-- (User/supabase/schema.sql) and, until now, was read directly by
+-- User/frontend (User/frontend/app/components/docs/ProcessingPanel.vue,
+-- via User/frontend/app/types/models.ts's `ExamRecord.progress`) to show
+-- a live percentage while an exam is processing.
+--
+-- Dropped anyway, by explicit decision: real per-page progress now lives
+-- in-memory in Processor's app/services/result_handler.py (see
+-- ResultHandler.progress()/list_progress()) — a DB write only ever
+-- happened once, at 100%, at the same moment `status` flips to
+-- 'finished', which already says the same thing. Keeping a column that's
+-- either stale (0, the whole time an exam is processing) or redundant
+-- (100, exactly when 'finished' already implies it) wasn't earning its
+-- keep.
+--
+-- ACTION REQUIRED on the User side before/when this runs against a
+-- shared project — this is NOT optional cleanup for that app:
+--   - User/frontend/app/types/models.ts: remove `progress: number` from
+--     `ExamRecord`.
+--   - User/frontend/app/components/docs/ProcessingPanel.vue: remove (or
+--     replace) the `({{ exam.progress }}%)` text — the field will simply
+--     be absent from every Supabase response once this migration runs.
+-- User/supabase/schema.sql has already been updated to match (see that
+-- file's history) — this migration is what makes the live DB agree with it.
+--
+-- Apply with the Supabase SQL editor, same project as
+-- 0001/0002 were applied to.
+-- ============================================================================
+
+alter table exams drop constraint if exists exams_progress_check;
+alter table exams drop column if exists progress;
