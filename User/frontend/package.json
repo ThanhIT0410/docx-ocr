@@ -1,0 +1,34 @@
+{
+  "name": "docxocr-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "typecheck": "nuxt typecheck",
+    "electron:dev": "concurrently -k -n NUXT,ELECTRON -c blue,magenta \"npm:dev\" \"node scripts/wait-and-launch-electron.mjs\"",
+    "electron:build": "npm run generate && electron-builder",
+    "electron:build:dir": "npm run generate && electron-builder --dir"
+  },
+  "dependencies": {
+    "@pinia/nuxt": "^1.0.1",
+    "@lucide/vue": "^1.25.0",
+    "@supabase/supabase-js": "^2.110.8",
+    "pinia": "^4.0.2",
+    "vuedraggable": "^4.1.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "electron": "^43.1.1",
+    "electron-builder": "^26.15.3",
+    "nuxt": "^4.5.0",
+    "typescript": "^5.7.3",
+    "vue-tsc": "^2.2.0",
+    "wait-on": "^8.0.2"
+  }
+}

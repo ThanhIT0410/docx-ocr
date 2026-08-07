@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DocxOCR — User Frontend</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   DESIGN TOKENS
+   ============================================================ */
+:root{
+  --bg:#EEF1F5;            /* nền chung, xám giấy lạnh */
+  --surface:#FFFFFF;       /* bề mặt thẻ / panel */
+  --surface-2:#F7F9FC;     /* bề mặt phụ */
+  --ink:#16213A;           /* chữ chính, xanh mực đậm */
+  --muted:#5C6B85;         /* chữ phụ */
+  --faint:#93A1B8;         /* chữ mờ, placeholder */
+  --line:#DDE3EC;          /* viền */
+  --accent:#2B4FD8;        /* xanh mực - hành động chính */
+  --accent-ink:#1E3AA8;
+  --accent-soft:#E9EEFF;
+  --pending:#B97E10;   --pending-bg:#FBF3DF;
+  --processing:#2B4FD8;--processing-bg:#E9EEFF;
+  --finished:#12855F;  --finished-bg:#DFF3EA;
+  --danger:#C4372F;    --danger-bg:#FBE8E6;
+  --radius:10px;
+  --font-body:'Be Vietnam Pro',system-ui,sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,monospace;
+  --shadow-sm:0 1px 2px rgba(22,33,58,.06);
+  --shadow-md:0 4px 16px rgba(22,33,58,.10);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  font-family:var(--font-body);
+  background:var(--bg);
+  color:var(--ink);
+  font-size:14px;
+  line-height:1.5;
+  overflow:hidden;
+}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ============================================================
+   APP SHELL:  rail (64px) | secondary (264px) | main
+   ============================================================ */
+.app{display:flex;height:100vh}
+
+/* ---------- Primary sidebar (icon rail) ---------- */
+.rail{
+  width:64px;flex:none;background:var(--ink);
+  display:flex;flex-direction:column;align-items:center;
+  padding:14px 0;gap:6px;
+}
+.rail-logo{
+  width:36px;height:36px;border-radius:9px;background:var(--accent);
+  display:grid;place-items:center;margin-bottom:14px;
+  color:#fff;font-weight:700;font-size:13px;letter-spacing:.5px;
+}
+.rail-btn{
+  width:44px;height:44px;border-radius:10px;display:grid;place-items:center;
+  color:#8FA0BF;position:relative;transition:background .15s,color .15s;
+}
+.rail-btn:hover{background:rgba(255,255,255,.08);color:#DCE4F2}
+.rail-btn.active{background:rgba(43,79,216,.35);color:#fff}
+.rail-btn.active::before{
+  content:"";position:absolute;left:-10px;top:10px;bottom:10px;width:3px;
+  border-radius:0 3px 3px 0;background:var(--accent);
+}
+.rail-btn svg{width:21px;height:21px}
+.rail-tip{
+  position:absolute;left:56px;top:50%;transform:translateY(-50%);
+  background:var(--ink);color:#fff;font-size:12px;padding:4px 9px;border-radius:6px;
+  white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .15s;z-index:50;
+  box-shadow:var(--shadow-md);
+}
+.rail-btn:hover .rail-tip{opacity:1}
+
+/* ---------- Secondary sidebar ---------- */
+.secondary{
+  width:264px;flex:none;background:var(--surface);
+  border-right:1px solid var(--line);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.sec-head{padding:18px 18px 10px}
+.sec-title{font-size:15px;font-weight:700;letter-spacing:-.01em}
+.sec-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.sec-body{flex:1;overflow-y:auto;padding:6px 10px 16px}
+.sec-group{margin-top:10px}
+.sec-group-label{
+  display:flex;align-items:center;gap:7px;
+  font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--muted);padding:6px 8px;
+}
+.dot{width:7px;height:7px;border-radius:50%}
+.dot.pending{background:var(--pending)}
+.dot.processing{background:var(--processing)}
+.dot.finished{background:var(--finished)}
+.count-pill{
+  margin-left:auto;font-family:var(--font-mono);font-size:11px;
+  background:var(--surface-2);border:1px solid var(--line);
+  border-radius:99px;padding:0 7px;color:var(--muted);
+}
+.doc-item{
+  width:100%;text-align:left;display:flex;gap:10px;align-items:center;
+  padding:9px 8px;border-radius:8px;transition:background .12s;
+}
+.doc-item:hover{background:var(--surface-2)}
+.doc-item.active{background:var(--accent-soft)}
+.doc-item.active .doc-name{color:var(--accent-ink)}
+.doc-thumb{
+  width:30px;height:38px;flex:none;border-radius:4px;background:#fff;
+  border:1px solid var(--line);position:relative;overflow:hidden;
+  box-shadow:var(--shadow-sm);
+}
+.doc-thumb::before{content:"";position:absolute;inset:6px 5px auto 5px;height:2.5px;background:#C9D2E0;border-radius:2px}
+.doc-thumb::after{content:"";position:absolute;inset:12px 5px auto 5px;height:20px;
+  background:repeating-linear-gradient(#E4E9F1 0 2px,transparent 2px 6px)}
+.doc-meta{min-width:0;flex:1}
+.doc-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.doc-info{font-family:var(--font-mono);font-size:11px;color:var(--faint);margin-top:1px}
+.empty-note{padding:14px 10px;font-size:12.5px;color:var(--faint);text-align:center}
+
+/* ---------- Main ---------- */
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.main-head{
+  padding:16px 26px;border-bottom:1px solid var(--line);background:var(--surface);
+  display:flex;align-items:center;gap:14px;min-height:64px;
+}
+.main-title{font-size:17px;font-weight:700;letter-spacing:-.01em}
+.main-sub{font-size:12.5px;color:var(--muted)}
+.main-body{flex:1;overflow-y:auto;padding:26px;position:relative}
+.spacer{flex:1}
+
+/* status badge */
+.badge{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:12px;font-weight:600;border-radius:99px;padding:3px 11px;
+}
+.badge.pending{color:var(--pending);background:var(--pending-bg)}
+.badge.processing{color:var(--processing);background:var(--processing-bg)}
+.badge.finished{color:var(--finished);background:var(--finished-bg)}
+
+/* buttons */
+.btn{
+  display:inline-flex;align-items:center;gap:8px;
+  font-size:13.5px;font-weight:600;border-radius:9px;padding:9px 18px;
+  transition:background .15s,transform .1s;
+}
+.btn:active{transform:translateY(1px)}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent-ink)}
+.btn-primary:disabled{background:#B9C4E3;cursor:not-allowed}
+.btn-ghost{border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+.btn-ghost:hover{background:var(--surface-2)}
+.btn svg{width:16px;height:16px}
+
+/* ============================================================
+   UPLOAD FLOW
+   ============================================================ */
+.stepper{display:flex;align-items:center;gap:0;margin-bottom:24px}
+.step{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600;color:var(--faint)}
+.step-num{
+  width:26px;height:26px;border-radius:50%;display:grid;place-items:center;
+  font-family:var(--font-mono);font-size:12px;
+  border:1.5px solid var(--line);background:var(--surface);color:var(--faint);
+}
+.step.current{color:var(--ink)}
+.step.current .step-num{border-color:var(--accent);background:var(--accent);color:#fff}
+.step.done{color:var(--accent-ink)}
+.step.done .step-num{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink)}
+.step-line{width:52px;height:1.5px;background:var(--line);margin:0 14px}
+.step-line.done{background:var(--accent)}
+
+/* dropzone */
+.dropzone{
+  border:1.5px dashed #B9C4D8;border-radius:14px;background:var(--surface);
+  padding:44px 20px;text-align:center;transition:border-color .15s,background .15s;
+  cursor:pointer;
+}
+.dropzone:hover,.dropzone.dragover{border-color:var(--accent);background:var(--accent-soft)}
+.dz-icon{width:46px;height:46px;margin:0 auto 12px;color:var(--accent)}
+.dz-title{font-size:15px;font-weight:600}
+.dz-sub{font-size:12.5px;color:var(--muted);margin-top:4px}
+.dz-formats{font-family:var(--font-mono);font-size:11px;color:var(--faint);margin-top:10px}
+
+/* file queue (mỗi item = 1 đề) */
+.queue{margin-top:22px;display:flex;flex-direction:column;gap:8px}
+.queue-label{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:2px}
+.file-row{
+  display:flex;align-items:center;gap:12px;background:var(--surface);
+  border:1px solid var(--line);border-radius:10px;padding:11px 14px;
+  box-shadow:var(--shadow-sm);transition:box-shadow .15s,opacity .15s;
+}
+.file-row.dragging{opacity:.45}
+.file-row.drop-target{box-shadow:0 0 0 2px var(--accent)}
+.grip{color:#B9C4D8;cursor:grab;flex:none;display:grid;place-items:center;width:20px}
+.grip:active{cursor:grabbing}
+.grip svg{width:15px;height:15px}
+.file-kind{
+  flex:none;font-family:var(--font-mono);font-size:10.5px;font-weight:500;
+  border-radius:5px;padding:2.5px 7px;letter-spacing:.03em;
+}
+.file-kind.pdf{background:var(--danger-bg);color:var(--danger)}
+.file-kind.img{background:var(--finished-bg);color:var(--finished)}
+.file-name{flex:1;min-width:0;font-weight:500;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.file-name-field{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.file-name-label{font-size:10.5px;color:var(--faint);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.file-name-input{
+  width:100%;border:1px solid transparent;background:transparent;border-radius:6px;
+  font-family:inherit;font-size:13.5px;font-weight:600;color:var(--ink);
+  padding:3px 6px;margin-left:-6px;transition:border-color .12s,background .12s;
+}
+.file-name-input:hover{background:var(--surface-2)}
+.file-name-input:focus{border-color:var(--accent);background:#fff;outline:none}
+.file-name-sub{font-size:11px;color:var(--faint);margin-left:1px}
+.file-status{font-family:var(--font-mono);font-size:11.5px;color:var(--muted);flex:none}
+.file-status.splitting{color:var(--accent)}
+.file-remove{color:var(--faint);flex:none;width:28px;height:28px;border-radius:7px;display:grid;place-items:center}
+.file-remove:hover{background:var(--danger-bg);color:var(--danger)}
+.file-remove svg{width:15px;height:15px}
+/* progress bar khi tách pdf */
+.split-bar{height:3px;border-radius:3px;background:var(--line);overflow:hidden;width:90px;flex:none}
+.split-bar i{display:block;height:100%;width:40%;background:var(--accent);border-radius:3px;animation:slide 1.1s ease-in-out infinite}
+@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}
+
+.flow-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}
+
+/* page grid (bước 2 + pending/processing) */
+.page-toolbar{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.hint{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted)}
+.hint svg{width:15px;height:15px;color:var(--faint)}
+.page-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:16px;
+}
+.page-card{
+  background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  overflow:hidden;box-shadow:var(--shadow-sm);position:relative;
+  transition:box-shadow .15s,opacity .15s,transform .15s;
+}
+.page-card.draggable{cursor:grab}
+.page-card.draggable:active{cursor:grabbing}
+.page-card.dragging{opacity:.4}
+.page-card.drop-target{box-shadow:0 0 0 2px var(--accent);transform:scale(1.02)}
+.page-card:hover .page-del{opacity:1}
+/* mô phỏng trang giấy đề thi */
+.sheet{aspect-ratio:3/4;background:#fff;position:relative;padding:12px 11px;border-bottom:1px solid var(--line)}
+.sheet-head{height:5px;width:62%;background:#B9C4D8;border-radius:2px;margin:0 auto 4px}
+.sheet-sub{height:3px;width:40%;background:#D5DCE8;border-radius:2px;margin:0 auto 9px}
+.sheet-lines{position:absolute;inset:44px 11px 12px 11px;
+  background:repeating-linear-gradient(#E7ECF3 0 3px,transparent 3px 9px)}
+.sheet-corner{position:absolute;top:0;right:0;border-style:solid;border-width:0 14px 14px 0;
+  border-color:transparent var(--bg) transparent transparent;filter:drop-shadow(-1px 1px 1px rgba(22,33,58,.08))}
+.page-foot{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:7px 10px;background:var(--surface);
+}
+.page-no{font-family:var(--font-mono);font-size:11.5px;color:var(--muted)}
+.page-src{font-family:var(--font-mono);font-size:10px;color:var(--faint);max-width:70px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.page-del{
+  position:absolute;top:7px;right:7px;width:26px;height:26px;border-radius:7px;
+  background:rgba(255,255,255,.92);border:1px solid var(--line);color:var(--muted);
+  display:grid;place-items:center;opacity:0;transition:opacity .15s;
+}
+.page-del:hover{background:var(--danger-bg);color:var(--danger);border-color:transparent}
+.page-del svg{width:14px;height:14px}
+
+/* sticky submit bar */
+.submit-bar{
+  position:sticky;bottom:0;margin:26px -26px -26px;padding:14px 26px;
+  background:linear-gradient(transparent,var(--bg) 30%);
+  display:flex;justify-content:flex-end;gap:10px;
+}
+
+/* ============================================================
+   FINISHED — SPLIT VIEW
+   ============================================================ */
+.split{display:grid;grid-template-columns:1fr 1fr;gap:0;height:100%;min-height:0}
+.pane{display:flex;flex-direction:column;min-width:0;min-height:0}
+.pane-head{
+  display:flex;align-items:center;gap:9px;padding:0 4px 12px;
+  font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);
+}
+.pane-body{flex:1;overflow-y:auto;min-height:0}
+/* signature: scan divider */
+.scan-divider{
+  width:34px;flex:none;position:relative;display:grid;place-items:center;
+}
+.scan-divider::before{
+  content:"";position:absolute;top:34px;bottom:8px;left:50%;width:1.5px;
+  background:linear-gradient(var(--line),var(--accent) 50%,var(--line));
+  background-size:100% 200%;animation:scan 3.2s linear infinite;
+}
+@keyframes scan{0%{background-position:0 200%}100%{background-position:0 -200%}}
+@media (prefers-reduced-motion:reduce){
+  .scan-divider::before{animation:none}
+  .split-bar i{animation:none;width:100%}
+}
+.finished-layout{display:flex;height:100%;min-height:0}
+.orig-page{
+  background:#fff;border:1px solid var(--line);border-radius:8px;
+  box-shadow:var(--shadow-sm);aspect-ratio:3/4;position:relative;
+  padding:26px 22px;margin-bottom:16px;
+}
+.ocr-card{
+  background:var(--surface);border:1px solid var(--line);border-radius:8px;
+  box-shadow:var(--shadow-sm);padding:20px 22px;margin-bottom:16px;
+  font-size:13.5px;line-height:1.75;
+}
+.ocr-card .q{font-weight:600;margin-top:10px}
+.ocr-card .q:first-child{margin-top:0}
+.ocr-page-tag{
+  font-family:var(--font-mono);font-size:10.5px;color:var(--faint);
+  border:1px solid var(--line);border-radius:5px;padding:1px 7px;
+  display:inline-block;margin-bottom:10px;background:var(--surface-2);
+}
+.conf{font-family:var(--font-mono);font-size:11px;color:var(--finished);margin-left:auto;text-transform:none;letter-spacing:0}
+
+/* view-only banner (processing) */
+.note-strip{
+  display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--muted);
+  background:var(--surface);border:1px solid var(--line);border-radius:9px;
+  padding:9px 14px;margin-bottom:16px;
+}
+.note-strip svg{width:15px;height:15px;color:var(--processing);flex:none}
+
+/* toast */
+.toast{
+  position:fixed;bottom:22px;left:50%;transform:translate(-50%,10px);
+  background:var(--ink);color:#fff;font-size:13px;font-weight:500;
+  border-radius:9px;padding:10px 18px;box-shadow:var(--shadow-md);
+  opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:100;
+}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+@media (max-width:900px){
+  .secondary{display:none}
+  .split,.finished-layout{display:block}
+  .scan-divider{display:none}
+  .pane{margin-bottom:20px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ===================== PRIMARY SIDEBAR (icon rail) ===================== -->
+  <nav class="rail" aria-label="Điều hướng chính">
+    <div class="rail-logo">OQ</div>
+    <button class="rail-btn active" id="nav-upload" onclick="switchModule('upload')" aria-label="Tải đề lên">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      <span class="rail-tip">Tải đề lên</span>
+    </button>
+    <button class="rail-btn" id="nav-docs" onclick="switchModule('docs')" aria-label="Tất cả tài liệu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      <span class="rail-tip">Tất cả tài liệu</span>
+    </button>
+  </nav>
+
+  <!-- ===================== SECONDARY SIDEBAR ===================== -->
+  <aside class="secondary" id="secondary"></aside>
+
+  <!-- ===================== MAIN ===================== -->
+  <main class="main">
+    <div class="main-head" id="main-head"></div>
+    <div class="main-body" id="main-body"></div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+/* ============================================================
+   MOCK DATA
+   ============================================================ */
+const mkPages = (n, src) => Array.from({length:n},(_,i)=>({id:src+'-'+(i+1), src, label:i+1}));
+
+const state = {
+  module: 'upload',          // 'upload' | 'docs'
+  uploadStep: 1,             // 1: tải tệp, 2: sắp xếp trang
+  uploadFiles: [],           // các đề đang chờ (mỗi item: {id,name,kind,pages,splitting})
+  uploadPages: [],           // trang đã tách/ảnh, ở bước 2
+  recent: [
+    {id:'r1', name:'Đề Toán giữa kỳ 12A3', pages:6, time:'10:24 hôm nay'},
+    {id:'r2', name:'Đề Văn thi thử lần 2', pages:4, time:'09:02 hôm nay'},
+    {id:'r3', name:'Đề Lý HK1 - mã 132', pages:5, time:'Hôm qua'},
+  ],
+  docs: {
+    pending: [
+      {id:'p1', name:'Đề Hóa 11 - mã 209', pages: mkPages(5,'de-hoa-209.pdf')},
+      {id:'p2', name:'Đề Anh thi thử', pages: mkPages(4,'scan-anh')},
+    ],
+    processing: [
+      {id:'x1', name:'Đề Toán giữa kỳ 12A3', pages: mkPages(6,'de-toan.pdf')},
+    ],
+    finished: [
+      {id:'f1', name:'Đề Sinh HK1 - mã 485', pages: mkPages(3,'de-sinh.pdf')},
+      {id:'f2', name:'Đề Sử 12 thi thử', pages: mkPages(2,'de-su.pdf')},
+    ],
+  },
+  activeDoc: null,           // {status, id}
+};
+
+const $  = s => document.querySelector(s);
+const el = (html)=>{const t=document.createElement('template');t.innerHTML=html.trim();return t.content.firstChild};
+const toast = msg => { const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),2200); };
+
+const icons = {
+  grip:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>',
+  x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+  move:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>',
+  info:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+  export:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+  upload:'<svg class="dz-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
+};
+
+/* ============================================================
+   NAVIGATION
+   ============================================================ */
+function switchModule(m){
+  state.module = m;
+  $('#nav-upload').classList.toggle('active', m==='upload');
+  $('#nav-docs').classList.toggle('active', m==='docs');
+  if(m==='docs' && !state.activeDoc){
+    const first = state.docs.pending[0] || state.docs.processing[0] || state.docs.finished[0];
+    if(first) state.activeDoc = {status: state.docs.pending[0]?'pending':(state.docs.processing[0]?'processing':'finished'), id:first.id};
+  }
+  render();
+}
+function openDoc(status,id){ state.activeDoc={status,id}; render(); }
+
+/* ============================================================
+   SECONDARY SIDEBAR RENDER
+   ============================================================ */
+function renderSecondary(){
+  const s = $('#secondary'); s.innerHTML='';
+  if(state.module==='upload'){
+    s.append(el(`<div class="sec-head"><div class="sec-title">Tải đề lên</div><div class="sec-sub">Đã gửi gần đây</div></div>`));
+    const body = el('<div class="sec-body"></div>');
+    if(!state.recent.length) body.append(el('<div class="empty-note">Chưa có đề nào được gửi.</div>'));
+    state.recent.forEach(r=>{
+      body.append(el(`<button class="doc-item">
+        <span class="doc-thumb"></span>
+        <span class="doc-meta"><span class="doc-name">${r.name}</span>
+        <span class="doc-info">${r.pages} trang · ${r.time}</span></span></button>`));
+    });
+    s.append(body);
+  } else {
+    s.append(el(`<div class="sec-head"><div class="sec-title">Tất cả tài liệu</div><div class="sec-sub">Theo dõi trạng thái xử lý</div></div>`));
+    const body = el('<div class="sec-body"></div>');
+    const groups = [
+      ['pending','Chờ xử lý'],['processing','Đang xử lý'],['finished','Hoàn thành']
+    ];
+    groups.forEach(([key,label])=>{
+      const g = el(`<div class="sec-group"><div class="sec-group-label"><span class="dot ${key}"></span>${label}<span class="count-pill">${state.docs[key].length}</span></div></div>`);
+      state.docs[key].forEach(d=>{
+        const active = state.activeDoc && state.activeDoc.id===d.id;
+        const item = el(`<button class="doc-item ${active?'active':''}">
+          <span class="doc-thumb"></span>
+          <span class="doc-meta"><span class="doc-name">${d.name}</span>
+          <span class="doc-info">${d.pages.length} trang</span></span></button>`);
+        item.onclick = ()=>openDoc(key,d.id);
+        g.append(item);
+      });
+      if(!state.docs[key].length) g.append(el('<div class="empty-note">Trống</div>'));
+      body.append(g);
+    });
+    s.append(body);
+  }
+}
+
+/* ============================================================
+   DRAG & DROP (dùng chung cho hàng tệp và lưới trang)
+   ============================================================ */
+function enableDrag(container, itemSel, list, onDone){
+  let dragIdx = null;
+  container.querySelectorAll(itemSel).forEach((node,idx)=>{
+    node.draggable = true;
+    node.addEventListener('dragstart', e=>{ dragIdx=idx; node.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; });
+    node.addEventListener('dragend', ()=>{ node.classList.remove('dragging'); container.querySelectorAll(itemSel).forEach(n=>n.classList.remove('drop-target')); });
+    node.addEventListener('dragover', e=>{ e.preventDefault(); if(idx!==dragIdx) node.classList.add('drop-target'); });
+    node.addEventListener('dragleave', ()=>node.classList.remove('drop-target'));
+    node.addEventListener('drop', e=>{
+      e.preventDefault();
+      if(dragIdx===null || dragIdx===idx) return;
+      const [moved] = list.splice(dragIdx,1);
+      list.splice(idx,0,moved);
+      onDone();
+    });
+  });
+}
+
+/* ============================================================
+   MAIN RENDER
+   ============================================================ */
+function render(){
+  renderSecondary();
+  const head = $('#main-head'), body = $('#main-body');
+  head.innerHTML=''; body.innerHTML='';
+
+  if(state.module==='upload'){ renderUpload(head,body); return; }
+
+  const doc = state.activeDoc && state.docs[state.activeDoc.status].find(d=>d.id===state.activeDoc.id);
+  if(!doc){
+    head.append(el('<div class="main-title">Tất cả tài liệu</div>'));
+    body.append(el('<div class="empty-note" style="padding-top:60px">Chọn một tài liệu ở thanh bên để xem.</div>'));
+    return;
+  }
+  if(state.activeDoc.status==='pending')    renderPending(head,body,doc);
+  if(state.activeDoc.status==='processing') renderProcessing(head,body,doc);
+  if(state.activeDoc.status==='finished')   renderFinished(head,body,doc);
+}
+
+/* ---------- MODULE: UPLOAD ---------- */
+function renderUpload(head,body){
+  head.append(el(`<div><div class="main-title">Tải đề lên</div>
+    <div class="main-sub">Ảnh chụp hoặc tệp PDF — PDF sẽ được tách thành từng trang</div></div>`));
+
+  const stepper = el(`<div class="stepper">
+    <div class="step ${state.uploadStep===1?'current':'done'}"><span class="step-num">${state.uploadStep>1?'✓':'1'}</span>Tải tệp</div>
+    <div class="step-line ${state.uploadStep>1?'done':''}"></div>
+    <div class="step ${state.uploadStep===2?'current':''}"><span class="step-num">2</span>Sắp xếp trang &amp; gửi</div>
+  </div>`);
+  body.append(stepper);
+
+  if(state.uploadStep===1) renderUploadStep1(body);
+  else renderUploadStep2(body);
+}
+
+function renderUploadStep1(body){
+  const dz = el(`<div class="dropzone" role="button" tabindex="0" title="Bấm vào đây để chọn tệp từ máy tính, hoặc kéo tệp rồi thả vào vùng này" aria-label="Chọn hoặc kéo thả tệp">
+    ${icons.upload}
+    <div class="dz-title">Kéo thả tệp vào đây, hoặc bấm để chọn</div>
+    <div class="dz-sub">Mỗi đề là một bộ ảnh hoặc một tệp PDF</div>
+    <div class="dz-formats">JPG · PNG · PDF — tối đa 50MB/tệp</div>
+  </div>`);
+  dz.onclick = mockAddFile;
+  dz.ondragover = e=>{e.preventDefault();dz.classList.add('dragover')};
+  dz.ondragleave = ()=>dz.classList.remove('dragover');
+  dz.ondrop = e=>{e.preventDefault();dz.classList.remove('dragover');mockAddFile();};
+  body.append(dz);
+
+  if(state.uploadFiles.length){
+    const q = el('<div class="queue"></div>');
+    q.append(el(`<div class="queue-label">Đề chờ tải lên · kéo để sắp thứ tự</div>`));
+    state.uploadFiles.forEach((f,i)=>{
+      const row = el(`<div class="file-row">
+        <span class="grip" title="Giữ và kéo để đổi thứ tự đề">${icons.grip}</span>
+        <span class="file-kind ${f.kind}" title="${f.kind==='pdf'?'Tệp PDF':'Bộ ảnh'}">${f.kind==='pdf'?'PDF':'ẢNH'}</span>
+        <span class="file-name-field">
+          <span class="file-name-label" title="Tên này sẽ hiển thị trong danh sách tài liệu của bạn">Tên đề</span>
+          <input class="file-name-input" type="text" value="${f.title}" title="Bấm vào đây để sửa tên đề" aria-label="Đặt tên cho đề ${f.name}">
+        </span>
+        ${f.splitting
+          ? `<span class="split-bar" title="Đang tách từng trang trong tệp PDF"><i></i></span><span class="file-status splitting">đang tách trang…</span>`
+          : `<span class="file-status" title="Số trang trong đề này">${f.pages} trang</span>`}
+        <button class="file-remove" title="Xóa đề này khỏi danh sách" aria-label="Xóa ${f.name}">${icons.x}</button>
+      </div>`);
+      row.querySelector('.file-name-input').oninput = e=>{ f.title = e.target.value; };
+      row.querySelector('.file-remove').onclick = ()=>{
+        if(confirm(`Xóa đề "${f.title}"? Bạn sẽ cần tải lại nếu muốn thêm lại.`)){ state.uploadFiles.splice(i,1); render(); }
+      };
+      q.append(row);
+    });
+    body.append(q);
+    enableDrag(q, '.file-row', state.uploadFiles, render);
+
+    const ready = state.uploadFiles.length && state.uploadFiles.every(f=>!f.splitting);
+    const act = el(`<div class="flow-actions">
+      <button class="btn btn-primary" title="Xem lại và sắp xếp thứ tự các trang trước khi gửi" ${ready?'':'disabled'}>Tiếp tục — sắp xếp trang</button></div>`);
+    act.querySelector('button').onclick = ()=>{
+      state.uploadPages = state.uploadFiles.flatMap(f=>mkPages(f.pages, f.title||f.name));
+      state.uploadTitles = state.uploadFiles.map(f=>f.title).join(', ');
+      state.uploadStep = 2; render();
+    };
+    body.append(act);
+  }
+}
+
+let mockCounter = 0;
+function mockAddFile(){
+  mockCounter++;
+  const isPdf = mockCounter % 2 === 1;
+  const f = isPdf
+    ? {id:'u'+mockCounter, name:`de-thi-${String(mockCounter).padStart(2,'0')}.pdf`, title:`Đề chưa đặt tên ${mockCounter}`, kind:'pdf', pages:0, splitting:true}
+    : {id:'u'+mockCounter, name:`bo-anh-de-${String(mockCounter).padStart(2,'0')} (4 ảnh)`, title:`Đề chưa đặt tên ${mockCounter}`, kind:'img', pages:4, splitting:false};
+  state.uploadFiles.push(f);
+  render();
+  if(isPdf) setTimeout(()=>{ f.splitting=false; f.pages=5; render(); toast(`Đã tách "${f.name}" thành 5 trang`); }, 1600);
+}
+
+function renderUploadStep2(body){
+  body.append(el(`<div class="hint" style="margin-bottom:14px;font-size:13.5px;color:var(--ink);font-weight:600">
+    ${icons.info} Đang sắp xếp: ${state.uploadTitles || 'Đề của bạn'}</div>`));
+  body.append(el(`<div class="page-toolbar">
+    <span class="hint" title="Nhấn giữ vào một trang rồi kéo sang vị trí khác">${icons.move} Kéo thả để đổi thứ tự trang</span>
+    <span class="hint" title="Đưa chuột vào trang, nút xóa sẽ hiện ở góc trên bên phải">${icons.trash} Di chuột vào trang để xóa</span>
+    <span class="spacer"></span>
+    <span class="hint" style="font-family:var(--font-mono)">${state.uploadPages.length} trang</span>
+  </div>`));
+  body.append(buildPageGrid(state.uploadPages, {draggable:true, deletable:true}));
+
+  const bar = el(`<div class="submit-bar">
+    <button class="btn btn-ghost" title="Quay lại bước tải tệp, có thể thêm hoặc bớt tệp">← Quay lại</button>
+    <button class="btn btn-primary" title="Gửi đề để hệ thống bắt đầu xử lý" ${state.uploadPages.length?'':'disabled'}>Gửi đề</button>
+  </div>`);
+  const [back,submit] = bar.querySelectorAll('button');
+  back.onclick = ()=>{ state.uploadStep=1; render(); };
+  submit.onclick = ()=>{
+    state.recent.unshift({id:'r'+Date.now(), name:state.uploadTitles || `Đề mới #${state.recent.length+1}`, pages:state.uploadPages.length, time:'Vừa xong'});
+    state.uploadFiles=[]; state.uploadPages=[]; state.uploadStep=1; state.uploadTitles='';
+    render(); toast('Đã gửi đề — đang chờ xử lý');
+  };
+  body.append(bar);
+}
+
+/* ---------- page grid dùng chung ---------- */
+function buildPageGrid(pages, {draggable=false, deletable=false}={}){
+  const grid = el('<div class="page-grid"></div>');
+  pages.forEach((p,i)=>{
+    const card = el(`<div class="page-card ${draggable?'draggable':''}">
+      <div class="sheet"><span class="sheet-corner"></span>
+        <div class="sheet-head"></div><div class="sheet-sub"></div><div class="sheet-lines"></div></div>
+      <div class="page-foot"><span class="page-no">Trang ${i+1}</span><span class="page-src">${p.src}</span></div>
+      ${deletable?`<button class="page-del" title="Xóa riêng trang ${i+1} này" aria-label="Xóa trang ${i+1}">${icons.trash}</button>`:''}
+    </div>`);
+    if(deletable) card.querySelector('.page-del').onclick = e=>{
+      e.stopPropagation(); pages.splice(i,1); render();
+    };
+    grid.append(card);
+  });
+  if(draggable) setTimeout(()=>enableDrag(grid,'.page-card',pages,render));
+  return grid;
+}
+
+/* ---------- MODULE: DOCS — PENDING ---------- */
+function renderPending(head,body,doc){
+  head.append(el(`<div><div class="main-title">${doc.name}</div>
+    <div class="main-sub">${doc.pages.length} trang · gửi lúc 10:24 hôm nay</div></div>
+    <span class="spacer"></span><span class="badge pending">● Chờ xử lý</span>`));
+  body.append(el(`<div class="page-toolbar">
+    <span class="hint">${icons.move} Kéo thả để đổi thứ tự</span>
+    <span class="hint">${icons.trash} Di chuột vào trang để xóa</span>
+  </div>`));
+  body.append(buildPageGrid(doc.pages,{draggable:true,deletable:true}));
+  const bar = el(`<div class="submit-bar"><button class="btn btn-primary" title="Lưu lại thứ tự và các trang bạn vừa chỉnh sửa">Lưu thay đổi</button></div>`);
+  bar.querySelector('button').onclick = ()=>toast('Đã lưu thứ tự trang');
+  body.append(bar);
+}
+
+/* ---------- MODULE: DOCS — PROCESSING ---------- */
+function renderProcessing(head,body,doc){
+  head.append(el(`<div><div class="main-title">${doc.name}</div>
+    <div class="main-sub">${doc.pages.length} trang</div></div>
+    <span class="spacer"></span><span class="badge processing">● Đang xử lý</span>`));
+  body.append(el(`<div class="note-strip">${icons.info}
+    Tài liệu đang được xử lý — chỉ có thể xem, không thể chỉnh sửa.</div>`));
+  body.append(buildPageGrid(doc.pages,{draggable:false,deletable:false}));
+}
+
+/* ---------- MODULE: DOCS — FINISHED (split view) ---------- */
+const mockOcr = [
+  {q:'Câu 1.', t:'Cho hàm số y = x³ − 3x + 2. Tìm các điểm cực trị của hàm số và vẽ bảng biến thiên.'},
+  {q:'Câu 2.', t:'Một vật chuyển động thẳng đều với vận tốc 5 m/s. Tính quãng đường vật đi được sau 12 giây.'},
+  {q:'Câu 3.', t:'Giải phương trình: 2sin²x − 3sinx + 1 = 0 trên khoảng (0; 2π).'},
+];
+function renderFinished(head,body,doc){
+  head.append(el(`<div><div class="main-title">${doc.name}</div>
+    <div class="main-sub">${doc.pages.length} trang · hoàn thành hôm qua</div></div>
+    <span class="spacer"></span><span class="badge finished">✓ Hoàn thành</span>`));
+  const exportBtn = el(`<button class="btn btn-primary" title="Tải kết quả nhận dạng chữ (OCR) về máy của bạn">${icons.export} Xuất kết quả</button>`);
+  exportBtn.onclick = ()=>toast('Đang xuất kết quả OCR…');
+  head.append(exportBtn);
+
+  const layout = el('<div class="finished-layout"></div>');
+  const left = el(`<div class="pane"><div class="pane-head">Ảnh gốc</div><div class="pane-body" id="pane-left"></div></div>`);
+  const right = el(`<div class="pane"><div class="pane-head">Kết quả OCR<span class="conf">độ tin cậy 98.2%</span></div><div class="pane-body" id="pane-right"></div></div>`);
+  layout.append(left, el('<div class="scan-divider"></div>'), right);
+  body.style.overflow='hidden'; body.append(layout);
+
+  const lp = left.querySelector('.pane-body'), rp = right.querySelector('.pane-body');
+  doc.pages.forEach((p,i)=>{
+    lp.append(el(`<div class="orig-page"><span class="sheet-corner"></span>
+      <div class="sheet-head"></div><div class="sheet-sub"></div>
+      <div class="sheet-lines" style="inset:60px 22px 26px"></div>
+      <div style="position:absolute;bottom:8px;left:0;right:0;text-align:center" class="page-no">Trang ${i+1}</div></div>`));
+    const card = el(`<div class="ocr-card"><span class="ocr-page-tag">TRANG ${i+1}</span></div>`);
+    mockOcr.forEach(m=>card.append(el(`<div><span class="q">${m.q}</span> ${m.t}</div>`)));
+    rp.append(card);
+  });
+
+  /* cuộn đồng bộ 2 bên */
+  let lock=false;
+  const sync=(a,b)=>a.addEventListener('scroll',()=>{ if(lock){lock=false;return}
+    lock=true; b.scrollTop = a.scrollTop/(a.scrollHeight-a.clientHeight||1)*(b.scrollHeight-b.clientHeight); });
+  sync(lp,rp); sync(rp,lp);
+}
+
+/* reset overflow khi rời finished */
+const _render = render;
+render = function(){ $('#main-body').style.overflow='auto'; _render(); };
+
+render();
+</script>
+</body>
+</html>

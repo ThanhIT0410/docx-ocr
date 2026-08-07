@@ -1,0 +1,31 @@
+appId: com.docxocr.user
+productName: DocxOCR
+directories:
+  output: dist-electron
+files:
+  - electron/**/*
+  - .output/public/**/*
+  - '!**/*.map'
+extraResources:
+  # Populated by `pyinstaller pyinstaller.spec` (run from User/backend/)
+  # before packaging — see backend/README.md. This is PyInstaller's
+  # --onedir output: ocr-backend[.exe] plus its supporting files all in one
+  # folder, copied flat into resources/backend/ so sidecar.js's
+  # `path.join(resourcesPath, 'backend', exeName)` finds the executable
+  # directly. CI/local build must run the PyInstaller step first;
+  # electron-builder does not invoke it.
+  - from: ../backend/dist/ocr-backend
+    to: backend
+    filter: ['**/*']
+win:
+  target: nsis
+  artifactName: '${productName}-Setup-${version}.${ext}'
+mac:
+  target: dmg
+  category: public.app-category.productivity
+linux:
+  target: AppImage
+  category: Office
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
