@@ -1,0 +1,72 @@
+appId: com.docxocr.processor
+productName: DocxOCR Processor
+directories:
+  output: dist-electron
+files:
+  - electron/**/*
+  - .output/public/**/*
+  - '!**/*.map'
+extraResources:
+  # Populated by `pyinstaller pyinstaller.spec` (run from Processor/backend/)
+  # before packaging — see backend/README.md. This is PyInstaller's
+  # --onedir output: ocr-processor-backend[.exe] plus its supporting files
+  # all in one folder, copied flat into resources/backend/ so
+  # electron/sidecar.js's `path.join(resourcesPath, 'backend', exeName)`
+  # finds the executable directly. CI/local build must run the PyInstaller
+  # step first; electron-builder does not invoke it — rerun it after every
+  # backend code change, this step does not happen automatically. No `.env`
+  # to drop in anymore: the operator enters the Supabase service_role
+  # key/access token once, in-app, on first launch (electron/main.js's
+  # first-run phase + electron/settings-store.js) — never baked into this
+  # bundle either way.
+  - from: ../backend/dist/ocr-processor-backend
+    to: backend
+    filter: ['**/*']
+  # Curated minimal subset of Processor/Llama/ (llama.cpp, CUDA-only build)
+  # needed to run llama-server.exe with the chandra-ocr-2 model — NOT the
+  # full ../Llama/ folder (5.2GB: every CLI tool, every CPU-microarch
+  # variant DLL, and the 3.5GB of model weights themselves). Verified this
+  # exact file list is sufficient by running llama-server.exe from a folder
+  # containing only these 13 files. No CPU-only fallback DLL is included on
+  # purpose — electron/gpu-check.js requires an NVIDIA GPU before this is
+  # ever used, and this model is far too slow to be usable on CPU anyway.
+  # The 2 model weight files are NOT bundled — electron/llama-downloader.js
+  # fetches them into app.getPath('userData') on first run instead.
+  - from: ../Llama/llama-server.exe
+    to: llama/llama-server.exe
+  - from: ../Llama/llama-server-impl.dll
+    to: llama/llama-server-impl.dll
+  - from: ../Llama/llama.dll
+    to: llama/llama.dll
+  - from: ../Llama/llama-common.dll
+    to: llama/llama-common.dll
+  - from: ../Llama/ggml.dll
+    to: llama/ggml.dll
+  - from: ../Llama/ggml-base.dll
+    to: llama/ggml-base.dll
+  - from: ../Llama/ggml-cuda.dll
+    to: llama/ggml-cuda.dll
+  - from: ../Llama/ggml-cpu-x64.dll
+    to: llama/ggml-cpu-x64.dll
+  - from: ../Llama/mtmd.dll
+    to: llama/mtmd.dll
+  - from: ../Llama/cublas64_12.dll
+    to: llama/cublas64_12.dll
+  - from: ../Llama/cublasLt64_12.dll
+    to: llama/cublasLt64_12.dll
+  - from: ../Llama/cudart64_12.dll
+    to: llama/cudart64_12.dll
+  - from: ../Llama/libomp140.x86_64.dll
+    to: llama/libomp140.x86_64.dll
+win:
+  target: nsis
+  artifactName: '${productName}-Setup-${version}.${ext}'
+mac:
+  target: dmg
+  category: public.app-category.productivity
+linux:
+  target: AppImage
+  category: Office
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true

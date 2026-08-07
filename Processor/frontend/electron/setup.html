@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<title>DocxOCR Processor — Đang khởi động</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: #EEF1F5; color: #16213A;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+  }
+  .card {
+    background: #FFFFFF; border-radius: 12px; padding: 32px 36px; width: 420px;
+    box-shadow: 0 8px 24px rgba(22, 33, 58, 0.12);
+  }
+  h1 { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  .status { font-size: 13px; color: #4A5568; margin: 0 0 16px; min-height: 36px; line-height: 1.5; }
+  .track { background: #E2E8F0; border-radius: 999px; height: 8px; overflow: hidden; }
+  .fill { background: #2B4FD8; height: 100%; width: 0%; transition: width 0.2s ease; }
+  .fill.error { background: #C2410C; }
+  .pct { font-family: 'Consolas', monospace; font-size: 12px; color: #4A5568; margin-top: 6px; text-align: right; }
+  .actions { margin-top: 18px; text-align: right; display: none; }
+  button {
+    background: #2B4FD8; color: white; border: none; border-radius: 8px;
+    padding: 10px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  button.secondary { background: transparent; color: #4A5568; margin-right: 8px; }
+  button:disabled { opacity: .6; cursor: not-allowed; }
+  .field { display: none; margin-bottom: 14px; }
+  .field label { display: block; font-size: 12.5px; font-weight: 600; margin-bottom: 5px; }
+  .field .hint { font-size: 11.5px; color: #718096; margin-top: 4px; }
+  .field input {
+    width: 100%; border: 1px solid #DDE3EC; border-radius: 7px; padding: 8px 10px;
+    font-size: 13px; font-family: 'Consolas', monospace; background: #F7F9FC;
+  }
+  .field input:focus { outline: 2px solid #2B4FD8; outline-offset: 1px; }
+  .field-error { font-size: 12px; color: #C2410C; margin-top: 8px; display: none; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>DocxOCR Processor</h1>
+    <p class="status" id="status">Đang kiểm tra GPU…</p>
+    <div class="track" id="track"><div class="fill" id="fill"></div></div>
+    <div class="pct" id="pct"></div>
+
+    <div class="field" id="fieldSupabaseUrl">
+      <label for="supabaseUrl">Supabase URL <span style="color:#C2410C">*</span></label>
+      <input id="supabaseUrl" type="text" autocomplete="off" placeholder="https://xxxxxxxx.supabase.co" />
+      <div class="hint">Dashboard Supabase → Project Settings → API → Project URL.</div>
+    </div>
+    <div class="field" id="fieldServiceRole">
+      <label for="serviceRoleKey">Supabase service_role key <span style="color:#C2410C">*</span></label>
+      <input id="serviceRoleKey" type="password" autocomplete="off" placeholder="sb_secret_..." />
+      <div class="hint">Cùng trang trên — mục service_role. Không phải anon key.</div>
+    </div>
+    <div class="field" id="fieldAccessToken">
+      <label for="accessToken">Supabase access token (tuỳ chọn)</label>
+      <input id="accessToken" type="password" autocomplete="off" placeholder="Để trống nếu không dùng" />
+      <div class="hint">Chỉ cần nếu muốn xem dung lượng DB/Storage ở trang Dashboard — có thể bổ sung sau trong Cài đặt.</div>
+    </div>
+    <div class="field-error" id="firstRunError"></div>
+
+    <div class="actions" id="actions">
+      <button class="secondary" id="quitBtn">Thoát</button>
+      <button id="continueBtn" style="display:none">Tiếp tục (không có OCR)</button>
+      <button id="firstRunBtn" style="display:none">Lưu và tiếp tục</button>
+    </div>
+  </div>
+  <script>
+    const statusEl = document.getElementById('status')
+    const trackEl = document.getElementById('track')
+    const fillEl = document.getElementById('fill')
+    const pctEl = document.getElementById('pct')
+    const actionsEl = document.getElementById('actions')
+    const continueBtn = document.getElementById('continueBtn')
+    const quitBtn = document.getElementById('quitBtn')
+    const firstRunBtn = document.getElementById('firstRunBtn')
+    const fieldSupabaseUrl = document.getElementById('fieldSupabaseUrl')
+    const fieldServiceRole = document.getElementById('fieldServiceRole')
+    const fieldAccessToken = document.getElementById('fieldAccessToken')
+    const firstRunError = document.getElementById('firstRunError')
+    const supabaseUrlInput = document.getElementById('supabaseUrl')
+    const serviceRoleKeyInput = document.getElementById('serviceRoleKey')
+    const accessTokenInput = document.getElementById('accessToken')
+
+    function fmtMB(bytes) { return (bytes / 1_000_000).toFixed(0) + ' MB' }
+
+    function resetPhaseUI() {
+      trackEl.style.display = 'block'
+      continueBtn.style.display = 'none'
+      firstRunBtn.style.display = 'none'
+      fieldSupabaseUrl.style.display = 'none'
+      fieldServiceRole.style.display = 'none'
+      fieldAccessToken.style.display = 'none'
+      firstRunError.style.display = 'none'
+      actionsEl.style.display = 'none'
+    }
+
+    window.processorSetup.onProgress((data) => {
+      resetPhaseUI()
+      switch (data.phase) {
+        case 'first-run':
+          statusEl.textContent = 'Kết nối tới Supabase trước khi tiếp tục thiết lập.'
+          trackEl.style.display = 'none'
+          fieldSupabaseUrl.style.display = 'block'
+          fieldServiceRole.style.display = 'block'
+          fieldAccessToken.style.display = 'block'
+          actionsEl.style.display = 'block'
+          firstRunBtn.style.display = 'inline-block'
+          break
+        case 'gpu-check':
+          statusEl.textContent = 'Đang kiểm tra GPU…'
+          break
+        case 'gpu-missing':
+          statusEl.textContent = data.message ||
+            'Không tìm thấy GPU NVIDIA phù hợp trên máy này. Tính năng OCR (llama.cpp) cần GPU NVIDIA hỗ trợ CUDA — ' +
+            'các phần khác của Console (danh sách đề, dashboard) vẫn dùng được nếu bạn tiếp tục.'
+          fillEl.classList.add('error')
+          fillEl.style.width = '100%'
+          actionsEl.style.display = 'block'
+          continueBtn.style.display = 'inline-block'
+          break
+        case 'downloading': {
+          const { fileIndex, fileCount, receivedBytes, totalBytes } = data
+          statusEl.textContent = `Đang tải model OCR (${fileIndex + 1}/${fileCount})… Chỉ cần tải 1 lần.`
+          const pct = totalBytes ? Math.min(100, Math.round((receivedBytes / totalBytes) * 100)) : 0
+          fillEl.style.width = pct + '%'
+          pctEl.textContent = `${fmtMB(receivedBytes)} / ${fmtMB(totalBytes)} (${pct}%)`
+          break
+        }
+        case 'starting-llama':
+          statusEl.textContent = 'Đang khởi động OCR engine…'
+          fillEl.style.width = '100%'
+          pctEl.textContent = ''
+          break
+        case 'starting-backend':
+          statusEl.textContent = 'Đang khởi động Admin API…'
+          fillEl.style.width = '100%'
+          break
+        case 'ready':
+          statusEl.textContent = 'Sẵn sàng.'
+          break
+        case 'error':
+          statusEl.textContent = data.message || 'Có lỗi xảy ra khi khởi động.'
+          fillEl.classList.add('error')
+          actionsEl.style.display = 'block'
+          break
+      }
+    })
+
+    quitBtn.addEventListener('click', () => window.processorSetup.quit())
+    continueBtn.addEventListener('click', () => window.processorSetup.continueWithoutLlama())
+    firstRunBtn.addEventListener('click', () => {
+      const supabaseUrl = supabaseUrlInput.value.trim()
+      const supabaseServiceRoleKey = serviceRoleKeyInput.value.trim()
+      if (!supabaseUrl || !supabaseServiceRoleKey) {
+        firstRunError.textContent = 'Cần nhập đủ Supabase URL và service_role key để tiếp tục.'
+        firstRunError.style.display = 'block'
+        return
+      }
+      firstRunBtn.disabled = true
+      window.processorSetup.saveFirstRun({
+        supabaseUrl,
+        supabaseServiceRoleKey,
+        supabaseAccessToken: accessTokenInput.value.trim()
+      })
+    })
+  </script>
+</body>
+</html>

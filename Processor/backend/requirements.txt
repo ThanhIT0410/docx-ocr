@@ -1,0 +1,41 @@
+# DocxOCR — Processor backend
+# Pin exact versions for reproducible deploys (internal server, not an
+# end-user installer, but we still want reproducibility across restarts /
+# redeploys). Versions below were the latest available on PyPI as of
+# 2026-07-22 — re-check before bumping, some (fastapi/uvicorn/pydantic) are
+# pinned to match Processor/../User/backend/requirements.txt where the same
+# library is used, so the two backends don't drift unnecessarily.
+
+# --- Admin/monitoring API -------------------------------------------------
+fastapi==0.139.2
+uvicorn[standard]==0.51.0
+pydantic==2.13.4
+pydantic-settings==2.14.2
+
+# --- Supabase (Postgres via PostgREST + Storage), service_role key -------
+supabase==2.31.0
+
+# --- OCR: OpenAI-compatible client against local llama.cpp server --------
+openai==2.46.0
+httpx==0.28.1          # used directly for the llama.cpp /health check
+
+# --- Image preprocessing (resize / contrast / deskew) ---------------------
+opencv-python-headless==4.13.0.92   # headless: no GUI libs needed on a server
+numpy==2.5.1
+
+# --- Retry / backoff for OCR calls -----------------------------------------
+tenacity==9.1.4
+
+# --- OCR response parsing (HTML layout blocks -> DocumentLayout) -----------
+beautifulsoup4==4.15.0
+
+# --- Config & logging -------------------------------------------------
+python-dotenv==1.2.2   # only used for local dev; prod passes real env vars
+python-json-logger==4.1.0
+
+# --- Dev / test (not needed at runtime) -----------------------------------
+pytest==9.1.1
+
+# --- Packaging (Processor console now spawns this bundle itself — see
+# Processor/frontend/electron/sidecar.js, run.py, pyinstaller.spec) ---------
+pyinstaller==6.21.0
