@@ -8,12 +8,12 @@ defineProps<{
   draggable?: boolean
   deletable?: boolean
 }>()
-const emit = defineEmits<{ delete: [] }>()
+const emit = defineEmits<{ delete: []; open: [] }>()
 </script>
 
 <template>
   <div class="page-card" :class="{ draggable }">
-    <div class="sheet">
+    <div class="sheet" :class="{ zoomable: imageUrl }" title="Bấm để xem ảnh lớn" @click="imageUrl && emit('open')">
       <img v-if="imageUrl" :src="imageUrl" :alt="`Trang ${pageNo}`" loading="lazy">
       <div v-else class="sheet-skeleton" aria-hidden="true" />
     </div>
@@ -43,6 +43,7 @@ const emit = defineEmits<{ delete: [] }>()
 .page-card.draggable:active { cursor: grabbing; }
 .page-card:hover .page-del { opacity: 1; }
 .sheet { aspect-ratio: 3/4; background: #fff; border-bottom: 1px solid var(--line); overflow: hidden; }
+.sheet.zoomable { cursor: zoom-in; }
 .sheet img { width: 100%; height: 100%; object-fit: contain; background: #fff; }
 .sheet-skeleton { width: 100%; height: 100%; background: var(--surface-2); }
 .page-foot {
