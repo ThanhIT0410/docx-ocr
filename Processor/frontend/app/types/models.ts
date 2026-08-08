@@ -6,7 +6,11 @@ export type ExamStatus = 'pending' | 'processing' | 'finished' | 'failed'
  * (Processor/backend/app/config/settings.py). */
 export interface WorkerTuningSettings {
   maxConcurrentPages: number | null
-  maxConcurrentProcessing: number | null
+  /** Mirrors app/config/settings.py's max_concurrent_processing_pages —
+   * total PAGES admitted into 'processing' at once, NOT a count of exams
+   * (exams vary wildly in page count, see queue_service.py's module
+   * docstring for why this was renamed from maxConcurrentProcessing). */
+  maxConcurrentProcessingPages: number | null
   workerPollIntervalSeconds: number | null
   ocrMaxAttempts: number | null
   ocrBackoffBaseSeconds: number | null
@@ -210,4 +214,10 @@ export interface DashboardResponse {
   counts: StatusCounts
   db_size_bytes: number | null
   storage_size_bytes: number | null
+  /** Total pages currently admitted into 'processing' (queued + actively
+   * being OCR'd) against `processing_pages_limit` — see
+   * Processor/backend/app/services/queue_service.py::QueueService.admitted_pages.
+   * Not the same as counts.processing (an exam count). */
+  processing_pages: number
+  processing_pages_limit: number
 }

@@ -9,7 +9,7 @@ import type { PreprocessingSettings, ProcessorSettingsUpdate, WorkerTuningSettin
 // control, and editing the field back to this same number IS resetting it.
 const WORKER_TUNING_DEFAULTS: WorkerTuningSettings = {
   maxConcurrentPages: 4,
-  maxConcurrentProcessing: 20,
+  maxConcurrentProcessingPages: 20,
   workerPollIntervalSeconds: 5,
   ocrMaxAttempts: 3,
   ocrBackoffBaseSeconds: 2,
@@ -87,7 +87,7 @@ onMounted(async () => {
     Object.assign(workerTuningOriginal, settings.workerTuning)
     Object.assign(workerTuning, {
       maxConcurrentPages: settings.workerTuning.maxConcurrentPages ?? WORKER_TUNING_DEFAULTS.maxConcurrentPages,
-      maxConcurrentProcessing: settings.workerTuning.maxConcurrentProcessing ?? WORKER_TUNING_DEFAULTS.maxConcurrentProcessing,
+      maxConcurrentProcessingPages: settings.workerTuning.maxConcurrentProcessingPages ?? WORKER_TUNING_DEFAULTS.maxConcurrentProcessingPages,
       workerPollIntervalSeconds: settings.workerTuning.workerPollIntervalSeconds ?? WORKER_TUNING_DEFAULTS.workerPollIntervalSeconds,
       ocrMaxAttempts: settings.workerTuning.ocrMaxAttempts ?? WORKER_TUNING_DEFAULTS.ocrMaxAttempts,
       ocrBackoffBaseSeconds: settings.workerTuning.ocrBackoffBaseSeconds ?? WORKER_TUNING_DEFAULTS.ocrBackoffBaseSeconds,
@@ -217,12 +217,12 @@ async function relaunchNow() {
             <summary>Worker tuning</summary>
             <div class="cluster-body">
               <div class="field-row">
-                <label for="maxConcurrentPages">Số trang OCR song song / 1 đề</label>
+                <label for="maxConcurrentPages">Số trang OCR song song (toàn bộ các đề đang xử lý)</label>
                 <input id="maxConcurrentPages" v-model.number="workerTuning.maxConcurrentPages" type="number" min="1">
               </div>
               <div class="field-row">
-                <label for="maxConcurrentProcessing">Số đề tối đa trong hàng đợi</label>
-                <input id="maxConcurrentProcessing" v-model.number="workerTuning.maxConcurrentProcessing" type="number" min="1">
+                <label for="maxConcurrentProcessingPages">Số trang tối đa đang xử lý cùng lúc</label>
+                <input id="maxConcurrentProcessingPages" v-model.number="workerTuning.maxConcurrentProcessingPages" type="number" min="1">
               </div>
               <div class="field-row">
                 <label for="pollInterval">Chu kỳ kiểm tra hàng đợi (giây)</label>

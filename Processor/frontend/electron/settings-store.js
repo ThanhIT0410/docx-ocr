@@ -27,7 +27,7 @@ function defaultSettings() {
     maxPixels: null,
     workerTuning: {
       maxConcurrentPages: null,
-      maxConcurrentProcessing: null,
+      maxConcurrentProcessingPages: null,
       workerPollIntervalSeconds: null,
       ocrMaxAttempts: null,
       ocrBackoffBaseSeconds: null,
@@ -101,7 +101,7 @@ function toEnvVars(settings) {
 
   const wt = settings.workerTuning || {}
   put('PROCESSOR_MAX_CONCURRENT_PAGES', wt.maxConcurrentPages)
-  put('PROCESSOR_MAX_CONCURRENT_PROCESSING', wt.maxConcurrentProcessing)
+  put('PROCESSOR_MAX_CONCURRENT_PROCESSING_PAGES', wt.maxConcurrentProcessingPages)
   put('PROCESSOR_WORKER_POLL_INTERVAL_SECONDS', wt.workerPollIntervalSeconds)
   put('PROCESSOR_OCR_MAX_ATTEMPTS', wt.ocrMaxAttempts)
   put('PROCESSOR_OCR_BACKOFF_BASE_SECONDS', wt.ocrBackoffBaseSeconds)

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { LightboxItem } from '~/components/shared/PageLightbox.vue'
 import type { PageRecord } from '~/types/models'
 
 const route = useRoute()
@@ -48,6 +49,17 @@ function pageSummary(page: PageRecord): string {
   const parts = Array.from(counts.entries()).map(([cat, n]) => `${cat}×${n}`)
   return `${layouts.length} khối — ${parts.join(', ')}`
 }
+
+/** Click-to-zoom for the page-list thumbnails (pending/processing/failed —
+ * 'finished' uses `FinishedPreview` below instead, which has its own
+ * larger scrollable panes and doesn't need this). Replaces what used to be
+ * a plain `<a target="_blank">` opening the image in a new browser tab —
+ * awkward inside Electron and gives no way to page through the exam while
+ * zoomed in. */
+const lightboxIndex = ref<number | null>(null)
+const lightboxItems = computed<LightboxItem[]>(() =>
+  (store.activeExam?.pages ?? []).map(p => ({ id: p.id, url: previewUrls.value[p.id] ?? null, order: p.page_order }))
+)
 </script>
 
 <template>
@@ -104,25 +116,39 @@ function pageSummary(page: PageRecord): string {
           </button>
         </div>
 
-        <div class="pages-head">Danh sách trang</div>
-        <div class="pages-list">
-          <div v-for="p in store.activeExam.pages" :key="p.id" class="page-row">
-            <a
-              v-if="previewUrls[p.id]"
-              :href="previewUrls[p.id]"
-              target="_blank"
-              rel="noopener"
-              class="page-thumb-link"
-              title="Xem ảnh gốc"
-            >
-              <img :src="previewUrls[p.id]" class="page-thumb" alt="">
-            </a>
-            <div v-else class="page-thumb page-thumb-empty" aria-hidden="true" />
-            <span class="page-order">#{{ p.page_order }}</span>
-            <span class="page-summary" :class="{ done: !!p.ocr_text }">{{ pageSummary(p) }}</span>
+        <FinishedPreview
+          v-if="store.activeExam.status === 'finished'"
+          :exam="store.activeExam"
+          :preview-urls="previewUrls"
+        />
+        <template v-else>
+          <div class="pages-head">Danh sách trang</div>
+          <div class="pages-list">
+            <div v-for="(p, i) in store.activeExam.pages" :key="p.id" class="page-row">
+              <button
+                v-if="previewUrls[p.id]"
+                type="button"
+                class="page-thumb-btn"
+                title="Bấm để xem ảnh lớn"
+                @click="lightboxIndex = i"
+              >
+                <img :src="previewUrls[p.id]" class="page-thumb" alt="">
+              </button>
+              <div v-else class="page-thumb page-thumb-empty" aria-hidden="true" />
+              <span class="page-order">#{{ p.page_order }}</span>
+              <span class="page-summary" :class="{ done: !!p.ocr_text }">{{ pageSummary(p) }}</span>
+            </div>
           </div>
-        </div>
+        </template>
       </div>
+
+      <PageLightbox
+        v-if="lightboxIndex !== null"
+        :items="lightboxItems"
+        :index="lightboxIndex"
+        @update:index="lightboxIndex = $event"
+        @close="lightboxIndex = null"
+      />
     </template>
     <div v-else-if="store.loadingActive" class="main-body">
       <div class="empty-note" style="padding-top:60px">Đang tải…</div>
@@ -141,7 +167,7 @@ function pageSummary(page: PageRecord): string {
 }
 .main-title { font-size: 18px; font-weight: 700; letter-spacing: -.01em; }
 .main-sub { font-size: 13px; color: var(--muted); }
-.main-body { flex: 1; overflow-y: auto; padding: 26px; }
+.main-body { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; padding: 26px; }
 .spacer { flex: 1; }
 
 .info-block { margin-bottom: 18px; }
@@ -161,10 +187,10 @@ function pageSummary(page: PageRecord): string {
 .pages-head { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 22px 0 8px; }
 .pages-list { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
 .page-row { display: flex; gap: 14px; align-items: center; padding: 9px 4px; border-bottom: 1px solid var(--line); }
-.page-thumb-link { flex: none; display: block; }
+.page-thumb-btn { flex: none; display: block; padding: 0; border-radius: 6px; cursor: zoom-in; }
 .page-thumb {
   width: 44px; height: 58px; border-radius: 6px; border: 1px solid var(--line);
-  object-fit: cover; background: var(--surface-2); flex: none;
+  object-fit: cover; background: var(--surface-2); flex: none; display: block;
 }
 .page-thumb-empty { display: block; }
 .page-order { font-family: var(--font-mono); font-size: 12.5px; color: var(--faint); flex: none; width: 40px; }
