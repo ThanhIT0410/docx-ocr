@@ -6,6 +6,8 @@ types for the local sidecar's own HTTP contract.
 """
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -87,3 +89,4 @@ class ExportRequest(BaseModel):
     examId: str
     title: str
     pages: list[ExportPageInput]
+    mode: Literal["layout", "plain"] = "layout"

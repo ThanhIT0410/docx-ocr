@@ -29,6 +29,7 @@ app.add_middleware(
     allow_origins=[settings.allowed_origin],
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 app.include_router(preview.router)

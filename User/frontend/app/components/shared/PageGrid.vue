@@ -25,6 +25,11 @@ const model = computed({
   get: () => props.items,
   set: (val: PageGridItem[]) => emit('reorder', val.map(v => v.id))
 })
+
+/** Index into `items` currently shown full-size, or `null` when closed —
+ * lives here (not per-`PageCard`) so Prev/Next in the lightbox can walk
+ * the whole grid regardless of which card was clicked. */
+const lightboxIndex = ref<number | null>(null)
 </script>
 
 <template>
@@ -44,6 +49,7 @@ const model = computed({
         draggable
         :deletable="deletable"
         @delete="emit('delete', element.id)"
+        @open="lightboxIndex = index"
       />
     </template>
   </draggable>
@@ -57,8 +63,17 @@ const model = computed({
       :image-url="element.imageUrl"
       :deletable="deletable"
       @delete="emit('delete', element.id)"
+      @open="lightboxIndex = index"
     />
   </div>
+
+  <PageLightbox
+    v-if="lightboxIndex !== null"
+    :items="items"
+    :index="lightboxIndex"
+    @update:index="lightboxIndex = $event"
+    @close="lightboxIndex = null"
+  />
 </template>
 
 <style scoped>

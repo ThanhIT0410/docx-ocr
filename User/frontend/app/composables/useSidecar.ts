@@ -106,6 +106,11 @@ export function useSidecar() {
     examId: string
     title: string
     pages: Array<{ pageId: string, order: number, ocrText: unknown, originalImageUrl: string }>
+    /** 'layout' (default, server-side) runs the full column/section
+     * reconstruction pipeline; 'plain' appends each block's text
+     * sequentially, ignoring layout — see backend's
+     * ExportRequest.mode / create_export_service(). */
+    mode?: 'layout' | 'plain'
   }): Promise<{ blob: Blob, filename: string }> {
     const res = await fetch(`${baseUrl()}/export`, {
       method: 'POST',
