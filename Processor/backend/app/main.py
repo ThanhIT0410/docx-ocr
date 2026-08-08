@@ -31,8 +31,8 @@ async def lifespan(_app: FastAPI):
     # services/result_handler.py's module docstrings for why these aren't
     # persisted/shared across processes.
     db = await get_supabase()
-    _app.state.queue_service = QueueService(max_size=settings.max_concurrent_processing)
-    _app.state.result_handler = ResultHandler(db)
+    _app.state.queue_service = QueueService(max_size=settings.max_concurrent_processing_pages)
+    _app.state.result_handler = ResultHandler(db, _app.state.queue_service)
     # One OcrClient for the process lifetime — see get_ocr_client's
     # docstring for why (pooled AsyncOpenAI connections).
     _app.state.ocr_client = OcrClient(
@@ -48,7 +48,7 @@ async def lifespan(_app: FastAPI):
     # Exams left 'processing' from a run that got closed mid-OCR — put
     # them back in the queue before serving any requests (§ new, see
     # services/recovery.py).
-    await recover_processing_exams(db, _app.state.queue_service)
+    await recover_processing_exams(db, _app.state.queue_service, _app.state.result_handler)
     yield
 
 

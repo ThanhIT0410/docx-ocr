@@ -36,7 +36,7 @@ def _make_app(queue: QueueService, state: OcrPipelineState) -> FastAPI:
     app.dependency_overrides[get_storage] = lambda: object()
     app.dependency_overrides[get_ocr_client] = lambda: object()
     app.dependency_overrides[get_queue_service] = lambda: queue
-    app.dependency_overrides[get_result_handler] = lambda: ResultHandler(db=object())
+    app.dependency_overrides[get_result_handler] = lambda: ResultHandler(db=object(), queue=queue)
     app.dependency_overrides[get_ocr_pipeline_state] = lambda: state
     app.dependency_overrides[require_api_key] = lambda: None
     return app
@@ -63,7 +63,7 @@ def test_start_with_empty_queue_and_not_running_returns_409():
 
 def test_start_with_queued_exam_starts_the_pipeline():
     queue = QueueService(max_size=10)
-    queue.enqueue("exam-1")
+    queue.enqueue("exam-1", 3)
     state = OcrPipelineState()
 
     # run_pipeline itself is patched out — this test only checks the route

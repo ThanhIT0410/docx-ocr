@@ -47,7 +47,14 @@ async def start(
     settings: Settings = Depends(get_settings),
     state: OcrPipelineState = Depends(get_ocr_pipeline_state),
 ) -> OcrStartResponse:
-    if not state.running and queue.qsize() == 0:
+    # admitted_pages (not qsize()) — a previous run may have aborted
+    # (llama.cpp unhealthy) and abandoned some exams mid-flight: their
+    # page budget is still held (see QueueService.release's docstring) even
+    # though they've already been popped out of the FIFO, so qsize() alone
+    # would wrongly report "nothing to do" and refuse to let the operator
+    # resume them (run_pipeline re-admits them into the FIFO on start, see
+    # app/services/recovery.py).
+    if not state.running and queue.admitted_pages == 0:
         raise HTTPException(status_code=409, detail="Hàng đợi đang trống — chưa có đề nào để xử lý.")
     started = state.start(run_pipeline(db, storage, ocr_client, queue, result_handler, settings))
     return OcrStartResponse(started=started, already_running=not started)

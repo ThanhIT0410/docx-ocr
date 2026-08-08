@@ -23,6 +23,21 @@ previous run — the process can be closed mid-exam (some pages OCR'd,
 resumes that exam needs to seed tracking with what's already done instead
 of starting back at 0 (see app/services/recovery.py, which repopulates
 the queue for exactly this case at startup).
+
+Also owns both ways an exam *concludes* — `append` (via `_mark_finished_in_db`)
+for the success path, `fail_exam` for the failure path — because both need
+to release that exam's admitted-page budget back to `QueueService` at
+exactly the moment the conclusion is written to the DB (see
+`app/services/queue_service.py::release`'s docstring for why the two need
+to be co-located rather than the caller remembering to call `release`
+separately). This is also why fail-fast is exam-scoped, not pipeline-wide,
+since app/services/ocr_pipeline.py's worker pool (§ new): one page erroring
+calls `fail_exam` for *that* page's exam only — other exams' workers are
+unaffected. A page that finishes for an exam some other page already
+failed (a legitimate race — see ocr_pipeline.py's worker loop) hits
+`UnknownExamError` here since `fail_exam` already removed it from
+`_exams`; the caller is expected to treat that specific error as
+"exam already concluded, discard silently", not a real bug.
 """
 from __future__ import annotations
 
@@ -31,9 +46,10 @@ from datetime import datetime, timezone
 
 from supabase import AsyncClient
 
-from app.constants import STATUS_FINISHED
+from app.constants import STATUS_FAILED, STATUS_FINISHED
 from app.repositories import exams, pages
 from app.schemas.models import OcrPageResult
+from app.services.queue_service import QueueService
 
 
 class UnknownExamError(Exception):
@@ -76,8 +92,9 @@ class ExamProgressSnapshot:
 
 
 class ResultHandler:
-    def __init__(self, db: AsyncClient):
+    def __init__(self, db: AsyncClient, queue: QueueService):
         self._db = db
+        self._queue = queue
         self._exams: dict[str, _ExamProgress] = {}
 
     def start_exam(
@@ -170,6 +187,39 @@ class ResultHandler:
         del self._exams[exam_id]
         return True
 
+    async def fail_exam(self, exam_id: str, error_message: str) -> None:
+        """The one place an exam transitions to 'failed' in the new
+        worker-pool pipeline — called by whichever worker's page raised,
+        for that page's exam only (see ocr_pipeline.py's worker loop). Mirrors
+        `_mark_finished_in_db`: releases the admitted-page budget and drops
+        tracking so any other in-flight page for this same exam (already
+        dispatched to a different worker before this one failed) hits
+        `UnknownExamError` in `append` and is discarded rather than
+        resurrecting a 'failed' exam back into 'finished'."""
+        progress = self._exams.get(exam_id)
+        if progress is None:
+            raise UnknownExamError(exam_id)
+        await exams.update_exam(self._db, exam_id, {"status": STATUS_FAILED, "error_message": error_message})
+        self._queue.release(exam_id)
+        del self._exams[exam_id]
+
+    def abandon_all(self) -> list[str]:
+        """Drops in-memory tracking for every currently-tracked exam
+        WITHOUT touching the DB or releasing their admitted-page budget —
+        used only when the pipeline run itself aborts for an infrastructure
+        reason (llama.cpp health check failing, see ocr_pipeline.py), not a
+        per-exam failure. Those exams are still legitimately 'processing'
+        in the DB (nothing about them individually went wrong), so they
+        must stay counted against the admission cap and get picked back up
+        by the same orphan-recovery pass `app/services/recovery.py` already
+        runs at process startup — `ocr_pipeline.py` runs that same pass at
+        the start of every run now, not just once, specifically so this
+        works mid-process-lifetime too, not just after a restart. Returns
+        the abandoned exam_ids for the caller to log."""
+        abandoned = list(self._exams.keys())
+        self._exams.clear()
+        return abandoned
+
     async def _mark_finished_in_db(self, exam_id: str) -> None:
         await exams.update_exam(
             self._db,
@@ -180,3 +230,4 @@ class ResultHandler:
                 "error_message": None,
             },
         )
+        self._queue.release(exam_id)

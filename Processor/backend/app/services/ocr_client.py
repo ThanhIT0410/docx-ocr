@@ -3,10 +3,10 @@
 
 One model call per image — app/prompts.py's OCR_PROMPT asks for "this
 image" (singular), not a batch. Async (not threads): the OCR pipeline
-(app/services/ocr_pipeline.py) runs one coroutine per page, bounded by an
-`asyncio.Semaphore` (`PROCESSOR_MAX_CONCURRENT_PAGES`), so N pages'
-llama.cpp round-trips overlap on a single thread instead of each waiting
-for the previous one to finish.
+(app/services/ocr_pipeline.py) runs a fixed pool of `PROCESSOR_MAX_CONCURRENT_PAGES`
+worker coroutines pulling pages one at a time (see
+app/services/page_pool.py), so N pages' llama.cpp round-trips overlap on a
+single thread instead of each waiting for the previous one to finish.
 
 Retry policy (§3.2 — "cần quyết định retry bao nhiêu lần, có backoff hay
 không"): network/timeout/5xx errors are retried with exponential backoff,
@@ -48,16 +48,21 @@ class OcrBatchError(Exception):
     """The response came back but couldn't be parsed into layout blocks —
     a problem with this specific page's content/response, not with
     llama.cpp's availability. Handled per-exam (see
-    worker_service.py::_process_exam)."""
+    ocr_pipeline.py's worker loop)."""
 
 
 class OcrConnectivityError(OcrBatchError):
     """All retries exhausted on network/timeout/5xx errors — signals
     llama.cpp itself is unreachable/unhealthy, not a problem specific to
     this exam. Handled differently from the base `OcrBatchError`: instead
-    of failing just this one exam, the caller resets every in-flight
-    'processing' exam back to 'pending' (see worker_service.py), since
-    they're all hitting the same root cause."""
+    of failing the exam whose page happened to hit this, the pipeline's
+    worker loop treats it as a shared infrastructure signal — it clears the
+    same "healthy" flag the periodic health-monitor task uses, stopping
+    every worker immediately rather than waiting for that monitor's next
+    scheduled check (see ocr_pipeline.py's `_worker`) — since a dead
+    llama.cpp server would otherwise surface as several concurrent pages
+    from UNRELATED exams all failing at once, which isn't really "many
+    exams broke", it's one root cause."""
 
 
 class OcrTruncatedError(OcrBatchError):

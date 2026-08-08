@@ -53,14 +53,17 @@ class Settings(BaseSettings):
     # (see services/worker_service.py), not a thread pool. No more
     # "batch size" (grouping pages to share one model call) — each page is
     # always its own model call now (see services/ocr_client.py).
-    max_concurrent_pages: int = 4
-    # Cap on how many exams may sit in status='processing' at once (checked
-    # at enqueue time, see services/enqueue_service.py) — bounds how much
-    # gets reset to 'pending' in one shot if llama.cpp goes down (see
-    # services/worker_service.py's OcrConnectivityError handling), and
-    # keeps a burst of enqueue calls from all trying to run OCR at once
-    # regardless of worker throughput.
-    max_concurrent_processing: int = 20
+    max_concurrent_pages: int = 8
+    # Cap on the total number of PAGES admitted into status='processing' at
+    # once (checked at enqueue time, see controllers/queue.py — NOT a count
+    # of exams: exams vary wildly in page count, so an exam-count cap
+    # didn't reflect real load, see app/services/queue_service.py's module
+    # docstring). Stays held for an admitted exam's whole 'processing'
+    # lifetime, not just while it's waiting in the FIFO — released only
+    # when it finishes or fails (QueueService.release). Keeps a burst of
+    # enqueue calls from admitting more work than the page-tier worker pool
+    # can realistically get through.
+    max_concurrent_processing_pages: int = 100
     worker_poll_interval_seconds: float = 5
     stale_claim_timeout_seconds: float = 900
     healthcheck_interval_seconds: float = 10

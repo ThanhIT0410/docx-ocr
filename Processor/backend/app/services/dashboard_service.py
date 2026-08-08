@@ -23,9 +23,10 @@ from app.repositories import exams
 from app.schemas.dto import DashboardResponse, StatusCounts
 from app.services import supabase_management
 from app.services.health_check import check_llamacpp_health
+from app.services.queue_service import QueueService
 
 
-async def get_dashboard(db: AsyncClient, settings: Settings) -> DashboardResponse:
+async def get_dashboard(db: AsyncClient, settings: Settings, queue: QueueService) -> DashboardResponse:
     today_start = datetime.combine(datetime.now(timezone.utc).date(), time.min, tzinfo=timezone.utc)
 
     (
@@ -51,6 +52,8 @@ async def get_dashboard(db: AsyncClient, settings: Settings) -> DashboardRespons
         counts=status_counts,
         db_size_bytes=db_size_bytes,
         storage_size_bytes=storage_size_bytes,
+        processing_pages=queue.admitted_pages,
+        processing_pages_limit=queue.max_size,
     )
 
 

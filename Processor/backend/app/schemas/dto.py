@@ -63,6 +63,12 @@ class EnqueueItemResult(BaseModel):
 
 
 class EnqueueResponse(BaseModel):
+    """`queue_size`/`queue_max_size` are page counts, not exam counts — see
+    `app/services/queue_service.py::QueueService.admitted_pages`. Exams
+    differ wildly in page count, so bounding admission by exam count didn't
+    reflect real load; this is the total pages currently admitted into
+    'processing' (queued + actively being OCR'd) against the configured cap."""
+
     results: list[EnqueueItemResult]
     queue_size: int
     queue_max_size: int
@@ -84,6 +90,8 @@ class DequeueItemResult(BaseModel):
 
 
 class DequeueResponse(BaseModel):
+    """`queue_size` — see EnqueueResponse's docstring: pages, not exams."""
+
     results: list[DequeueItemResult]
     queue_size: int
 
@@ -145,3 +153,11 @@ class DashboardResponse(BaseModel):
     counts: StatusCounts
     db_size_bytes: int | None
     storage_size_bytes: int | None
+    # Total pages currently admitted into 'processing' (queued + actively
+    # being OCR'd) against the configured cap — see
+    # app/services/queue_service.py::QueueService.admitted_pages. Not part
+    # of StatusCounts since that's purely exam counts per status; this is a
+    # page-level capacity metric, shown alongside the "processing" stat on
+    # the frontend's Dashboard (see Processor/DESIGN_REPORT.md).
+    processing_pages: int
+    processing_pages_limit: int
