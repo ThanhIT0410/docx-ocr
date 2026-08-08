@@ -8,7 +8,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Response
 
 from app.schemas import ExportRequest
-from app.services.export_service import ExportService, UnsupportedPageAspectRatioError
+from app.services.export_service import UnsupportedPageAspectRatioError, create_export_service
 from app.services.layout_reconstructor_v2 import LayoutReconstructionError
 
 router = APIRouter(tags=["export"])
@@ -20,7 +20,7 @@ def export_exam(payload: ExportRequest) -> Response:
     from Supabase and forwards them here — this process never touches
     Supabase directly (no key is ever given to it, by design)."""
     try:
-        result = ExportService(payload.title).export(payload.pages)
+        result = create_export_service(payload.title, payload.mode).export(payload.pages)
     except UnsupportedPageAspectRatioError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except LayoutReconstructionError as exc:
