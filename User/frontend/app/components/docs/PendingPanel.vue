@@ -4,6 +4,10 @@ import type { PageGridItem } from '~/components/shared/PageGrid.vue'
 
 const props = defineProps<{ exam: NonNullable<ReturnType<typeof useDocumentsStore>['activeExam']> }>()
 
+function deleteExam() {
+  useDocumentsStore().deleteExam(props.exam.id, props.exam.status)
+}
+
 const draft = ref(props.exam.pages.slice())
 const deleted = ref<typeof props.exam.pages>([])
 const dirty = ref(false)
@@ -48,6 +52,9 @@ async function save() {
         <div class="main-sub">{{ exam.pages.length }} trang · gửi lúc {{ formatDateTime(exam.uploaded_at) }}</div>
       </div>
       <span class="spacer" />
+      <button class="btn btn-ghost btn-icon" title="Xóa đề này" aria-label="Xóa đề" @click="deleteExam">
+        <Trash2 :size="16" />
+      </button>
       <StatusBadge status="pending" />
     </div>
     <div class="main-body">

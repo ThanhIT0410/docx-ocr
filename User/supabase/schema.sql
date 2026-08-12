@@ -22,8 +22,6 @@ create table if not exists exams (
     title           text not null,
     status          text not null default 'pending'
                         constraint exams_status_check check (status in ('pending','processing','finished')),
-    progress        smallint not null default 0
-                        constraint exams_progress_check check (progress between 0 and 100),
     error_message   text,
     uploaded_at     timestamptz not null default now(),
     started_at      timestamptz,
@@ -62,7 +60,7 @@ create trigger trg_exams_updated_at
 alter table exams enable row level security;
 alter table pages enable row level security;
 
--- exams: the frontend only ever reads and creates rows. Status/progress/
+-- exams: the frontend only ever reads and creates rows. Status/
 -- finished_at transitions are written by the Processor using the
 -- `service_role` key, which bypasses RLS entirely — no UPDATE policy for
 -- `anon` is granted on purpose.
@@ -73,6 +71,17 @@ create policy exams_select_anon on exams
 create policy exams_insert_anon on exams
   for insert to anon
   with check (true); -- TODO(multi-user): with check (user_id = auth.uid())
+
+-- Deleting is allowed any time *except* while the Processor owns the row
+-- (status = 'processing') — enforced here, not just in the UI, since this
+-- is the last line of defense against a race between the frontend's own
+-- pre-delete status check and the Processor flipping status concurrently.
+-- `pages` cascades via FK; the matching Storage objects don't (Storage
+-- isn't part of Postgres), so the frontend deletes those explicitly first
+-- (see stores/documents.ts::deleteExam) — see storage.sql for that policy.
+create policy exams_delete_anon on exams
+  for delete to anon
+  using (status <> 'processing'); -- TODO(multi-user): and user_id = auth.uid()
 
 -- pages: readable always; writable (update/delete) by the frontend only
 -- while the parent exam is still 'pending' (§6 "Pending: cho phép xóa trang

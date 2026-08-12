@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Info } from '@lucide/vue'
+import { Info, Trash2 } from '@lucide/vue'
 import type { PageGridItem } from '~/components/shared/PageGrid.vue'
 
 const props = defineProps<{ exam: NonNullable<ReturnType<typeof useDocumentsStore>['activeExam']> }>()
@@ -7,6 +7,10 @@ const props = defineProps<{ exam: NonNullable<ReturnType<typeof useDocumentsStor
 const gridItems = computed<PageGridItem[]>(() =>
   props.exam.pages.map(p => ({ id: p.id, source: p.file_path.split('/').pop() ?? '', imageUrl: p.signedUrl }))
 )
+
+function deleteExam() {
+  useDocumentsStore().deleteExam(props.exam.id, props.exam.status)
+}
 </script>
 
 <template>
@@ -17,12 +21,15 @@ const gridItems = computed<PageGridItem[]>(() =>
         <div class="main-sub">{{ exam.pages.length }} trang</div>
       </div>
       <span class="spacer" />
+      <button class="btn btn-ghost btn-icon" title="Xóa đề này" aria-label="Xóa đề" @click="deleteExam">
+        <Trash2 :size="16" />
+      </button>
       <StatusBadge status="processing" />
     </div>
     <div class="main-body">
       <div class="note-strip">
         <Info :size="15" />
-        Tài liệu đang được xử lý ({{ exam.progress }}%) — chỉ có thể xem, không thể chỉnh sửa.
+        Tài liệu đang được xử lý — chỉ có thể xem, không thể chỉnh sửa.
       </div>
       <PageGrid :items="gridItems" />
     </div>

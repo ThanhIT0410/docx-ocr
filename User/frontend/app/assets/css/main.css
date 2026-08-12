@@ -81,6 +81,8 @@ input { font-family: inherit; }
 .btn-danger { color: var(--danger); }
 .btn-danger:hover:not(:disabled) { background: var(--danger-bg); }
 .btn svg { width: 17px; height: 17px; flex: none; }
+.btn-icon { padding: 0; width: 40px; justify-content: center; }
+.btn-icon:hover:not(:disabled) { color: var(--danger); background: var(--danger-bg); border-color: transparent; }
 
 /* ---------- Hint / helper text ---------- */
 .hint { display: flex; align-items: center; gap: 7px; font-size: 13.5px; color: var(--muted); }
