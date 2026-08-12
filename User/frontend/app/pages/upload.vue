@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Info, Move, Trash2 } from '@lucide/vue'
+import { Move, Trash2 } from '@lucide/vue'
 import type { PageGridItem } from '~/components/shared/PageGrid.vue'
 
 const store = useUploadStore()
@@ -32,7 +32,6 @@ const gridItems = computed<PageGridItem[]>(() =>
           :items="store.items"
           @reorder="store.setItemsOrder"
           @remove="store.removeItem"
-          @rename="store.renameItem"
         />
         <div v-if="store.items.length" class="flow-actions">
           <button
@@ -47,9 +46,17 @@ const gridItems = computed<PageGridItem[]>(() =>
       </template>
 
       <template v-else>
-        <div class="hint current-title">
-          <Info :size="16" />
-          Đang sắp xếp: {{ store.combinedTitle || 'Đề của bạn' }}
+        <div class="exam-title-field">
+          <label class="exam-title-label" for="exam-title-input">Tên đề</label>
+          <input
+            id="exam-title-input"
+            class="exam-title-input"
+            type="text"
+            :value="store.examTitle"
+            placeholder="Đặt tên cho đề này"
+            title="Tên này sẽ hiển thị trong danh sách tài liệu của bạn"
+            @input="store.setExamTitle(($event.target as HTMLInputElement).value)"
+          >
         </div>
         <div class="page-toolbar">
           <span class="hint" title="Nhấn giữ vào một trang rồi kéo sang vị trí khác"><Move :size="15" /> Kéo thả để đổi thứ tự trang</span>
@@ -92,7 +99,17 @@ const gridItems = computed<PageGridItem[]>(() =>
 .main-sub { font-size: 13px; color: var(--muted); }
 .main-body { flex: 1; overflow-y: auto; padding: 26px; position: relative; }
 .spacer { flex: 1; }
-.current-title { margin-bottom: 14px; font-size: 14.5px; color: var(--ink); font-weight: 600; }
+.exam-title-field { margin-bottom: 18px; max-width: 420px; }
+.exam-title-label {
+  display: block; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); margin-bottom: 6px;
+}
+.exam-title-input {
+  width: 100%; border: 1px solid var(--line); border-radius: 9px; background: var(--surface);
+  font-size: 16px; font-weight: 600; color: var(--ink); padding: 10px 14px; min-height: 40px;
+  transition: border-color .12s;
+}
+.exam-title-input:focus { border-color: var(--accent); outline: none; }
 .page-toolbar { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; flex-wrap: wrap; }
 .mono { font-family: var(--font-mono); }
 .flow-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }

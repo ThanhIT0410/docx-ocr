@@ -4,17 +4,21 @@ import type { UploadItem } from '~/types/models'
 import { GripVertical, X } from '@lucide/vue'
 
 const props = defineProps<{ items: UploadItem[] }>()
-const emit = defineEmits<{ reorder: [orderedIds: string[]]; remove: [id: string]; rename: [id: string, title: string] }>()
+const emit = defineEmits<{ reorder: [orderedIds: string[]]; remove: [id: string] }>()
 
 const model = computed({
   get: () => props.items,
   set: (val: UploadItem[]) => emit('reorder', val.map(v => v.id))
 })
 
-function confirmRemove(item: UploadItem) {
-  if (confirm(`Xóa đề "${item.title}"? Bạn sẽ cần tải lại nếu muốn thêm lại.`)) {
-    emit('remove', item.id)
-  }
+async function confirmRemove(item: UploadItem) {
+  const ok = await useConfirm().confirm({
+    title: 'Xóa tệp này?',
+    message: `"${item.fileName}" sẽ bị bỏ khỏi danh sách. Bạn sẽ cần tải lại nếu muốn thêm lại.`,
+    danger: true,
+    confirmLabel: 'Xóa'
+  })
+  if (ok) emit('remove', item.id)
 }
 </script>
 
@@ -30,24 +34,14 @@ function confirmRemove(item: UploadItem) {
           <span class="file-kind" :class="f.kind" :title="f.kind === 'pdf' ? 'Tệp PDF' : 'Bộ ảnh'">
             {{ f.kind === 'pdf' ? 'PDF' : 'ẢNH' }}
           </span>
-          <span class="file-name-field">
-            <span class="file-name-label" title="Tên này sẽ hiển thị trong danh sách tài liệu của bạn">Tên đề</span>
-            <input
-              class="file-name-input"
-              type="text"
-              :value="f.title"
-              :aria-label="`Đặt tên cho đề ${f.fileName}`"
-              title="Bấm vào đây để sửa tên đề"
-              @input="emit('rename', f.id, ($event.target as HTMLInputElement).value)"
-            >
-          </span>
+          <span class="file-name" :title="f.fileName">{{ f.fileName }}</span>
           <span v-if="f.error" class="file-status error">{{ f.error }}</span>
           <template v-else-if="f.splitting">
             <span class="split-bar" title="Đang xử lý tệp"><i /></span>
             <span class="file-status splitting">{{ f.kind === 'pdf' ? 'đang tách trang…' : 'đang xử lý…' }}</span>
           </template>
           <span v-else class="file-status" title="Số trang trong đề này">{{ f.pages.length }} trang</span>
-          <button class="file-remove" :title="`Xóa đề ${f.title}`" :aria-label="`Xóa ${f.fileName}`" @click="confirmRemove(f)">
+          <button class="file-remove" :title="`Xóa ${f.fileName}`" :aria-label="`Xóa ${f.fileName}`" @click="confirmRemove(f)">
             <X :size="16" />
           </button>
         </div>
@@ -75,15 +69,10 @@ function confirmRemove(item: UploadItem) {
 }
 .file-kind.pdf { background: var(--danger-bg); color: var(--danger); }
 .file-kind.img { background: var(--finished-bg); color: var(--finished); }
-.file-name-field { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.file-name-label { font-size: 10.5px; color: var(--faint); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
-.file-name-input {
-  width: 100%; border: 1px solid transparent; background: transparent; border-radius: 6px;
-  font-family: inherit; font-size: 14px; font-weight: 600; color: var(--ink);
-  padding: 4px 6px; margin-left: -6px; transition: border-color .12s, background .12s;
+.file-name {
+  flex: 1; min-width: 0; font-size: 14px; font-weight: 600; color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.file-name-input:hover { background: var(--surface-2); }
-.file-name-input:focus { border-color: var(--accent); background: #fff; outline: none; }
 .file-status { font-family: var(--font-mono); font-size: 12px; color: var(--muted); flex: none; }
 .file-status.splitting { color: var(--accent); }
 .file-status.error { color: var(--danger); }
