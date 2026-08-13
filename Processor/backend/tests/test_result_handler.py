@@ -1,6 +1,9 @@
 """Unit tests for ResultHandler — run against mocked repository calls, not
-a real Supabase project (append() writes `status='finished'` for real, so
-it must never touch the actual DB in a test)."""
+a real Supabase project (append()/fail_exam() write to the DB for real, so
+they must never touch the actual DB in a test). Uses a real QueueService
+(pure in-memory, no mocking needed) to verify release() is called at
+exactly the right moments — see queue_service.py's module docstring for why
+that matters (admitted-page budget accounting)."""
 from __future__ import annotations
 
 import asyncio
@@ -9,6 +12,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.schemas.models import OcrPageResult
+from app.services.queue_service import QueueService
 from app.services.result_handler import (
     ExamAlreadyTrackedError,
     ResultHandler,
@@ -18,8 +22,8 @@ from app.services.result_handler import (
 FAKE_RESULT = OcrPageResult(origin_width=100, origin_height=200, input_width=100, input_height=200, layouts=[])
 
 
-def _handler() -> ResultHandler:
-    return ResultHandler(db=object())  # never dereferenced — repo calls are mocked
+def _handler(queue: QueueService | None = None) -> ResultHandler:
+    return ResultHandler(db=object(), queue=queue or QueueService(max_size=100))  # db never dereferenced — repo calls are mocked
 
 
 def _run(coro):
@@ -185,3 +189,86 @@ def test_finalize_if_complete_unknown_exam_raises():
     handler = _handler()
     with pytest.raises(UnknownExamError):
         _run(handler.finalize_if_complete("never-started"))
+
+
+def test_append_and_finalize_release_admitted_pages_budget():
+    """The DB write and the QueueService.release() call must happen
+    together — an exam finishing has to free its page budget so new
+    admissions can use it."""
+    queue = QueueService(max_size=3)
+    queue.enqueue("exam-1", 3)
+    queue.dequeue()  # simulates PagePool activating it — budget stays held
+    handler = _handler(queue)
+    handler.start_exam("exam-1", "Exam One", total_pages=3)
+
+    with patch("app.services.result_handler.pages.save_ocr_text", new=AsyncMock()), patch(
+        "app.services.result_handler.exams.update_exam", new=AsyncMock()
+    ):
+        _run(handler.append("exam-1", "p1", FAKE_RESULT))
+        _run(handler.append("exam-1", "p2", FAKE_RESULT))
+        assert queue.admitted_pages == 3  # not yet complete
+        _run(handler.append("exam-1", "p3", FAKE_RESULT))
+
+    assert queue.admitted_pages == 0
+
+
+def test_fail_exam_marks_failed_releases_budget_and_stops_tracking():
+    queue = QueueService(max_size=5)
+    queue.enqueue("exam-1", 5)
+    queue.dequeue()
+    handler = _handler(queue)
+    handler.start_exam("exam-1", "Exam One", total_pages=5)
+
+    with patch("app.services.result_handler.exams.update_exam", new=AsyncMock()) as mock_update:
+        _run(handler.fail_exam("exam-1", "boom"))
+
+    assert mock_update.await_args.args[2]["status"] == "failed"
+    assert mock_update.await_args.args[2]["error_message"] == "boom"
+    assert queue.admitted_pages == 0
+    assert handler.is_tracking("exam-1") is False
+
+
+def test_fail_exam_unknown_exam_raises():
+    handler = _handler()
+    with pytest.raises(UnknownExamError):
+        _run(handler.fail_exam("never-started", "boom"))
+
+
+def test_append_after_sibling_page_already_failed_the_exam_raises_unknown():
+    """Simulates the real race in ocr_pipeline.py's worker pool: one page
+    fails and calls fail_exam() first, another page for the SAME exam is
+    still in flight and calls append() afterwards — must see
+    UnknownExamError (the pipeline's worker loop treats that as
+    "already concluded, discard"), not silently resurrect/double-count."""
+    handler = _handler()
+    handler.start_exam("exam-1", "Exam One", total_pages=2)
+
+    with patch("app.services.result_handler.exams.update_exam", new=AsyncMock()):
+        _run(handler.fail_exam("exam-1", "boom"))
+
+    with pytest.raises(UnknownExamError):
+        _run(handler.append("exam-1", "page-2", FAKE_RESULT))
+
+
+def test_abandon_all_clears_tracking_without_touching_db_or_budget():
+    """Used only on a pipeline-wide abort (llama.cpp unhealthy) — exams
+    stay 'processing' in the DB and their budget stays held (they'll be
+    re-admitted by recovery on the next run), only in-memory tracking is
+    dropped."""
+    queue = QueueService(max_size=10)
+    queue.enqueue("exam-1", 2)
+    queue.enqueue("exam-2", 3)
+    queue.dequeue()
+    queue.dequeue()
+    handler = _handler(queue)
+    handler.start_exam("exam-1", "Exam One", total_pages=2)
+    handler.start_exam("exam-2", "Exam Two", total_pages=3)
+
+    with patch("app.services.result_handler.exams.update_exam", new=AsyncMock()) as mock_update:
+        abandoned = handler.abandon_all()
+
+    assert sorted(abandoned) == ["exam-1", "exam-2"]
+    mock_update.assert_not_awaited()
+    assert queue.admitted_pages == 5  # untouched
+    assert handler.is_tracking("exam-1") is False
+    assert handler.list_progress() == []

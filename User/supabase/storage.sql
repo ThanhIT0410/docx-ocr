@@ -25,8 +25,8 @@ create policy exam_pages_delete_anon on storage.objects
   for delete to anon
   using (bucket_id = 'exam-pages');
 
--- Known gap (see design report "Hạn chế đã biết"): deleting an `exams` row
--- (cascade-deletes `pages`) does NOT currently cascade-delete the matching
--- Storage objects — nothing in the app deletes a whole exam today, so this
--- is dormant, but revisit with a Storage trigger or a scheduled sweep if an
--- exam-delete feature is added later.
+-- Deleting an `exams` row cascade-deletes `pages` at the DB level, but
+-- Storage objects live outside Postgres so nothing does that automatically
+-- — `stores/documents.ts::deleteExam` deletes the matching Storage objects
+-- itself (querying `pages.file_path` for the exam) *before* deleting the
+-- exam row, using the generic `exam_pages_delete_anon` policy above.

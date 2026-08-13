@@ -18,4 +18,5 @@ onBeforeUnmount(() => {
     <NuxtPage />
   </div>
   <AppToast />
+  <ConfirmDialog />
 </template>

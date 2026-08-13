@@ -12,7 +12,9 @@ export const useUploadStore = defineStore('upload', {
     step: 1 as 1 | 2,
     items: [] as UploadItem[],
     pages: [] as LocalPreviewPage[],
-    combinedTitle: '',
+    /** The exam's name — the only name that matters (see UploadItem's doc
+     * comment). Editable at step 2, defaulted once when entering it. */
+    examTitle: '',
     submitting: false
   }),
 
@@ -45,7 +47,6 @@ export const useUploadStore = defineStore('upload', {
         const item: UploadItem = {
           id: nextId(),
           fileName: batch.name,
-          title: defaultTitle(batch.name),
           kind: batch.kind,
           splitting: true,
           pages: []
@@ -68,7 +69,11 @@ export const useUploadStore = defineStore('upload', {
       const item = this.items.find(i => i.id === itemId)
       if (!item) return
       try {
-        const { previewId, pages } = await useSidecar().createPreview(item.title, files)
+        // `title` here is only a label for the sidecar's on-disk preview
+        // folder (never shown to the user, never becomes exams.title —
+        // see UploadItem's doc comment), so a derived-from-filename value
+        // is fine without being user-editable.
+        const { previewId, pages } = await useSidecar().createPreview(defaultTitle(item.fileName), files)
         const current = this.items.find(i => i.id === itemId)
         if (!current) return
         current.previewId = previewId
@@ -87,11 +92,6 @@ export const useUploadStore = defineStore('upload', {
       }
     },
 
-    renameItem(id: string, title: string) {
-      const item = this.items.find(i => i.id === id)
-      if (item) item.title = title
-    },
-
     async removeItem(id: string) {
       const idx = this.items.findIndex(i => i.id === id)
       if (idx === -1) return
@@ -108,8 +108,15 @@ export const useUploadStore = defineStore('upload', {
 
     goToStep2() {
       this.pages = this.items.flatMap(i => i.pages).map((p, i) => ({ ...p, order: i + 1 }))
-      this.combinedTitle = this.items.map(i => i.title).join(', ')
+      // Only suggest a default the first time — re-entering step 2 (e.g.
+      // after going back to add one more file) must not clobber a title
+      // the user already typed.
+      if (!this.examTitle && this.items[0]) this.examTitle = defaultTitle(this.items[0].fileName)
       this.step = 2
+    },
+
+    setExamTitle(title: string) {
+      this.examTitle = title
     },
 
     backToStep1() {
@@ -140,7 +147,7 @@ export const useUploadStore = defineStore('upload', {
       this.submitting = true
       const supabase = useSupabase()
       const bucket = storageBucket()
-      const title = this.combinedTitle || `Đề mới ${new Date().toLocaleString('vi-VN')}`
+      const title = this.examTitle || `Đề mới ${new Date().toLocaleString('vi-VN')}`
 
       try {
         const { data: exam, error: examErr } = await supabase
@@ -175,7 +182,7 @@ export const useUploadStore = defineStore('upload', {
 
         this.items = []
         this.pages = []
-        this.combinedTitle = ''
+        this.examTitle = ''
         this.step = 1
         useToast().info('Đã gửi đề — đang chờ xử lý')
         await useDocumentsStore().fetchLists()

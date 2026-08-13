@@ -63,6 +63,9 @@ const statusCards: Array<{ key: keyof typeof store.counts, label: string }> = [
           <div v-for="c in statusCards" :key="c.key" class="stat-card">
             <div class="stat-value">{{ store.counts[c.key] }}</div>
             <div class="stat-label">{{ c.label }}</div>
+            <div v-if="c.key === 'processing'" class="stat-sub">
+              {{ store.processingPages }}/{{ store.processingPagesLimit }} trang
+            </div>
           </div>
         </div>
 
@@ -142,6 +145,7 @@ const statusCards: Array<{ key: keyof typeof store.counts, label: string }> = [
 
 .stat-row { display: flex; gap: 14px; margin-bottom: 12px; }
 .stat-row .stat-card { flex: 1; }
+.stat-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
 
 .usage-row {
   display: flex; gap: 24px; background: var(--surface); border: 1px solid var(--line);

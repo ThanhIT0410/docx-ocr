@@ -18,6 +18,9 @@ export const useDashboardStore = defineStore('dashboard', {
     counts: { pending: 0, processing: 0, finished: 0, failed: 0 } as StatusCounts,
     dbSizeBytes: null as number | null,
     storageSizeBytes: null as number | null,
+    /** Pages, not exams — see types/models.ts's DashboardResponse docstring. */
+    processingPages: 0,
+    processingPagesLimit: 0,
     /** Processor API's own liveness (GET /health, no auth) — distinct from
      * `llamacppHealthy` above, which is the OCR model server's health as
      * reported by the backend's own health check. */
@@ -43,6 +46,8 @@ export const useDashboardStore = defineStore('dashboard', {
         this.counts = dashboard.counts
         this.dbSizeBytes = dashboard.db_size_bytes
         this.storageSizeBytes = dashboard.storage_size_bytes
+        this.processingPages = dashboard.processing_pages
+        this.processingPagesLimit = dashboard.processing_pages_limit
         this.offline = false
       } catch (err) {
         this.offline = true

@@ -85,18 +85,13 @@ async function startLlama(opts) {
     '--mmproj', opts.mmprojPath,
     '--port', String(port),
     '--host', '127.0.0.1',
-    '--ctx-size', '16384',
-    '--parallel', '4',
+    '--ctx-size', '32768',
+    '--parallel', '8',
     '--n-gpu-layers', '999',
-    // Reduces KV cache VRAM usage and generally speeds up attention —
-    // worth having on with --parallel 4 (4 slots each holding their own
-    // KV cache) and vision-token-heavy prompts (long context per
-    // request). This build's --flash-attn takes a required value
-    // (on/off/auto — confirmed via `llama-server.exe --help`; passing it
-    // bare, like a boolean flag, makes llama-server consume the next argv
-    // token as its value instead and fail to parse, exiting immediately
-    // before the model loads).
     '--flash-attn', 'on',
+    '--cache-type-k', 'q8_0',
+    '--cache-type-v', 'q8_0',
+    '--batch-size', '4096',
     '-a', alias
   ];
 

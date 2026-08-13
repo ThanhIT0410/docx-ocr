@@ -3,34 +3,51 @@ FastAPI's `BackgroundTasks` — that's for quick post-response work, not an
 indefinite loop; see controllers/ocr.py's `POST /processor/ocr/start`,
 which launches this via `OcrPipelineState.start`).
 
-One iteration of `run_pipeline`:
-1. Health-check llama.cpp.
-2. Pull the next exam_id off `QueueService` (`dequeue()` — the raw method;
-   not the same as `POST /processor/queue/dequeue`, which cancels an exam
-   instead, see queue_service.py's module docstring). Nothing queued ->
-   the loop ends and the background task completes normally (see below —
-   this is intentional, not a bug: one `POST /processor/ocr/start` call
-   processes whatever's in the queue *right now* and then stops, rather
-   than idling forever waiting for more work).
-3. Process every remaining page of that exam concurrently, bounded by
-   `PROCESSOR_MAX_CONCURRENT_PAGES` coroutines: download -> preprocess ->
-   call llama.cpp -> `ResultHandler.append` (which itself does the
-   "write ocr_text, then check/flip to finished" cluster atomically — see
-   result_handler.py; there's no real cross-system transaction to be had
-   between Postgres and this process's memory, so `append` being a single
-   coroutine with no `await` between its bookkeeping steps *is* the
-   atomicity guarantee here, not a DB `BEGIN`/`COMMIT`).
+`run_pipeline`:
+1. Re-admits any exam left `processing` with nothing currently tracking it,
+   via `recover_processing_exams` (`app/services/recovery.py`) — the same
+   function `app/main.py` calls once at process startup, but here it also
+   covers a *previous* call to `run_pipeline` that aborted mid-flight (see
+   "abandoned" below) — that case does NOT happen only once at startup.
+2. Spawns exactly `settings.max_concurrent_pages` persistent worker
+   coroutines sharing one `PagePool` (app/services/page_pool.py) — each
+   loops `pop_page()` -> download -> preprocess -> call llama.cpp ->
+   `ResultHandler.append()`, across however many exams are admitted, until
+   `pop_page()` returns `None` (everything admitted has been fully
+   dispatched). This is what lets a worker roll from "the current exam's
+   last page" straight into the next exam's first page without waiting for
+   every other worker to also finish that exam — the whole point of the
+   page tier (see queue_service.py's module docstring for the exam-vs-page
+   split, and PagePool's for how pages from multiple exams get interleaved).
+3. A separate background task pings llama.cpp every
+   `settings.healthcheck_interval_seconds` and flips a shared
+   `asyncio.Event` — workers check it (cheap, no HTTP call) before each
+   `pop_page()`, so an unhealthy llama.cpp stops every worker without each
+   of them redundantly polling it themselves.
 
-Fail-fast by design: ANY exception anywhere in this loop — health check,
-storage, preprocessing, the model call, a DB write — cancels every other
-in-flight page task for the current exam, marks that exam 'failed' with
-the error message, and propagates out of `run_pipeline` entirely, stopping
-the whole background task (not just skipping one page or one exam). This
-is a deliberate simplification versus the old per-page-retry/isolate-and-
-continue design: the caller (`OcrPipelineState`) records the error so
-`GET /processor/queue/progress` can surface "OCR stopped, here's why" to
-the frontend, and `POST /processor/ocr/start` must be called again to
-resume — nothing here silently reduces throughput and keeps going.
+Fail-fast, now scoped to the *exam*, not the whole run: a page-level
+exception (storage, preprocessing, the model call, a DB write) marks only
+that page's exam 'failed' via `ResultHandler.fail_exam` — every OTHER
+exam's workers are unaffected, since they're independent coroutines pulling
+independent pages. This is a deliberate narrowing from the old
+per-exam-sequential design (where ANY exception stopped the entire
+background task) — safe now specifically because worker failures no longer
+share mutable state beyond `PagePool`/`ResultHandler`, both of which are
+built to isolate one exam's conclusion from another's. A page belonging to
+an exam some *other* page already failed is not retried or specially
+cancelled — it's left to finish (or fail) on its own and its result is
+simply discarded (`UnknownExamError` from `ResultHandler.append`), which is
+simpler and just as correct as tracking+cancelling that exam's other
+in-flight `Task`s would have been (see DESIGN_REPORT discussion this was
+weighed against).
+
+A failed health check IS still pipeline-wide (llama.cpp itself being down
+is an infrastructure problem, not any one exam's fault): every worker stops
+pulling new pages, `OcrPipelineState` records the error via
+`GET /processor/queue/progress`, and every exam still tracked at that
+moment is *abandoned* (not failed — see `ResultHandler.abandon_all`) so the
+next `run_pipeline` call picks them back up via step 1 instead of losing
+track of them.
 """
 from __future__ import annotations
 
@@ -40,14 +57,13 @@ import logging
 from supabase import AsyncClient
 
 from app.config.settings import Settings
-from app.constants import STATUS_FAILED
-from app.repositories import exams, pages
-from app.schemas.models import Page
 from app.services.health_check import check_llamacpp_health
-from app.services.ocr_client import OcrClient
+from app.services.ocr_client import OcrClient, OcrConnectivityError
+from app.services.page_pool import PagePool
 from app.services.preprocessing import preprocess_image
-from app.services.queue_service import QueueEmptyError, QueueService
-from app.services.result_handler import ResultHandler
+from app.services.queue_service import QueueService
+from app.services.recovery import recover_processing_exams
+from app.services.result_handler import ResultHandler, UnknownExamError
 from app.storage.client import StorageHelper
 
 logger = logging.getLogger(__name__)
@@ -97,89 +113,113 @@ async def run_pipeline(
     result_handler: ResultHandler,
     settings: Settings,
 ) -> None:
-    """Drains `queue` completely, then returns — by design, a "run" is one
-    pass over whatever was enqueued at the time `POST /processor/ocr/start`
-    was called, not an indefinitely-idling background service. New exams
-    enqueued *during* an active run are still picked up (they land in the
-    same `QueueService` this loop keeps re-`dequeue()`ing from), but once
-    it drains, `OcrPipelineState.running` goes back to False and the
-    operator has to explicitly start another run (enqueue -> "Bật xử lý
-    OCR" again) — no `worker_poll_interval_seconds` sleep-and-retry here
-    anymore, since there's no "wait for more work" state to poll through."""
-    while True:
-        if not await check_llamacpp_health(settings.llamacpp_base_url):
-            raise RuntimeError("llama.cpp health check failed")
+    """Drains everything currently admitted (FIFO-queued exams plus
+    whatever's already buffered in the page pool), then returns — one
+    "run" is one pass over whatever was enqueued at the time
+    `POST /processor/ocr/start` was called, not an indefinitely-idling
+    background service. New exams enqueued *during* an active run are still
+    picked up (they land in the same `QueueService` `PagePool` keeps
+    re-`dequeue()`ing from as it activates exams), but once it drains,
+    `OcrPipelineState.running` goes back to False and the operator has to
+    explicitly start another run."""
+    await recover_processing_exams(db, queue, result_handler)
 
-        try:
-            exam_id = queue.dequeue()
-        except QueueEmptyError:
-            return
+    # Checked synchronously, once, before any worker is allowed to touch
+    # the page pool — same upfront guarantee the old per-exam check gave
+    # ("never start OCR-ing anything against a dead llama.cpp"). The
+    # periodic monitor below only needs to cover *while* workers are
+    # running, not this first instant.
+    if not await check_llamacpp_health(settings.llamacpp_base_url):
+        raise RuntimeError("llama.cpp health check failed")
 
-        await _process_exam(db, storage, ocr_client, result_handler, exam_id, settings)
+    healthy = asyncio.Event()
+    healthy.set()
+    health_monitor = asyncio.create_task(_monitor_health(settings, healthy))
 
-
-async def _process_exam(
-    db: AsyncClient,
-    storage: StorageHelper,
-    ocr_client: OcrClient,
-    result_handler: ResultHandler,
-    exam_id: str,
-    settings: Settings,
-) -> None:
-    exam = await exams.get_exam(db, exam_id)
-    if exam is None:
-        # Dequeued but gone from the DB (e.g. deleted via admin/reset
-        # between enqueue and now) — nothing to mark failed, just stop.
-        raise RuntimeError(f"exam {exam_id} was dequeued but no longer exists")
+    pool = PagePool(db, queue, result_handler)
+    failed_exam_ids: set[str] = set()
 
     try:
-        all_pages = await pages.list_pages(db, exam_id)
-        existing_results = {p.id: p.ocr_text for p in all_pages if p.ocr_text is not None}
-        remaining = [p for p in all_pages if p.ocr_text is None]
+        workers = [
+            asyncio.create_task(
+                _worker(pool, storage, ocr_client, result_handler, failed_exam_ids, healthy, settings)
+            )
+            for _ in range(max(1, settings.max_concurrent_pages))
+        ]
+        await asyncio.gather(*workers)
+    finally:
+        health_monitor.cancel()
+        try:
+            await health_monitor
+        except asyncio.CancelledError:
+            pass
 
-        result_handler.start_exam(exam_id, exam.title, total_pages=len(all_pages), existing_results=existing_results)
-        if await result_handler.finalize_if_complete(exam_id):
-            return  # every page was already done (fully resumed) — nothing left to process
+    if not healthy.is_set():
+        abandoned = result_handler.abandon_all()
+        if abandoned:
+            logger.warning(
+                "OCR pipeline stopped (llama.cpp unhealthy) — abandoned in-flight exams, "
+                "will be re-admitted on the next run",
+                extra={"exam_ids": abandoned},
+            )
+        raise RuntimeError("llama.cpp health check failed")
 
-        await _process_pages(storage, ocr_client, result_handler, exam_id, remaining, settings)
-    except Exception as exc:
-        await exams.update_exam(db, exam_id, {"status": STATUS_FAILED, "error_message": str(exc)})
-        raise
+
+async def _monitor_health(settings: Settings, healthy: asyncio.Event) -> None:
+    """Background task: pings llama.cpp every `healthcheck_interval_seconds`
+    and clears `healthy` the moment it fails. Sleeps first — `run_pipeline`
+    already did the initial check synchronously before this task was even
+    created, so an immediate re-check here would be redundant."""
+    while True:
+        await asyncio.sleep(settings.healthcheck_interval_seconds)
+        if not await check_llamacpp_health(settings.llamacpp_base_url):
+            healthy.clear()
+            return
 
 
-async def _process_pages(
+async def _worker(
+    pool: PagePool,
     storage: StorageHelper,
     ocr_client: OcrClient,
     result_handler: ResultHandler,
-    exam_id: str,
-    remaining: list[Page],
+    failed_exam_ids: set[str],
+    healthy: asyncio.Event,
     settings: Settings,
 ) -> None:
-    semaphore = asyncio.Semaphore(max(1, settings.max_concurrent_pages))
+    while healthy.is_set():
+        item = await pool.pop_page()
+        if item is None:
+            return
+        exam_id, page = item
+        if exam_id in failed_exam_ids:
+            continue  # a sibling page already failed this exam — discard, see module docstring
 
-    async def process_one(page: Page) -> None:
-        async with semaphore:
+        try:
             raw = await storage.download(page.file_path)
             # preprocess_image is CPU-bound (OpenCV) — off the event loop
-            # so it doesn't stall every other page's I/O while it runs.
+            # so it doesn't stall every other worker's I/O while it runs.
             pre = await asyncio.to_thread(preprocess_image, raw, settings)
             result = await ocr_client.process_image(
                 pre.content, pre.origin_width, pre.origin_height, pre.input_width, pre.input_height
             )
             await result_handler.append(exam_id, page.id, result)
-
-    tasks = [asyncio.create_task(process_one(p)) for p in remaining]
-    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
-
-    if pending:
-        # One page failed — stop the others for this exam immediately
-        # rather than let them keep burning llama.cpp calls for an exam
-        # that's about to be marked failed anyway.
-        for task in pending:
-            task.cancel()
-        await asyncio.gather(*pending, return_exceptions=True)
-
-    for task in done:
-        exc = task.exception()
-        if exc is not None:
-            raise exc
+        except UnknownExamError:
+            pass  # exam concluded (finished/failed) via another page while this one was in flight
+        except OcrConnectivityError:
+            # llama.cpp itself is unreachable — an infrastructure problem
+            # shared by every worker, not this one page's exam's fault (see
+            # ocr_client.py's OcrConnectivityError docstring). Don't fail
+            # the exam over it: just signal unhealthy immediately (every
+            # worker stops on its next loop check, same as the periodic
+            # monitor catching it) so a single dead-server blip during a
+            # burst of concurrent calls can't spuriously fail several
+            # unrelated exams before the next scheduled health check would
+            # have caught it. This page's result was never saved, so it's
+            # naturally retried once recovery re-admits this exam.
+            healthy.clear()
+        except Exception as exc:  # noqa: BLE001 — any OTHER failure here is this one exam's problem, not the run's
+            failed_exam_ids.add(exam_id)
+            try:
+                await result_handler.fail_exam(exam_id, str(exc))
+            except UnknownExamError:
+                pass  # another page for this exam already failed it first

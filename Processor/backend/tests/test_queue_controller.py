@@ -60,11 +60,14 @@ def test_enqueue_flips_pending_exam_to_processing_in_db():
 
     with patch(
         "app.controllers.queue.exams.get_exam", new=AsyncMock(return_value=_exam("exam-1", "pending"))
-    ), patch("app.controllers.queue.exams.update_exam", new=AsyncMock()) as mock_update:
+    ), patch("app.controllers.queue.exams.update_exam", new=AsyncMock()) as mock_update, patch(
+        "app.controllers.queue.pages.count_total", new=AsyncMock(return_value=7)
+    ):
         r = _post(app, "/processor/queue/enqueue", {"exam_ids": ["exam-1"]})
 
     assert r.status_code == 200
     assert r.json()["results"] == [{"exam_id": "exam-1", "queued": True, "reason": None}]
+    assert r.json()["queue_size"] == 7  # pages, not exam count
     assert queue.is_queued("exam-1") is True
     mock_update.assert_awaited_once()
     assert mock_update.await_args.args[1] == "exam-1"
@@ -77,7 +80,9 @@ def test_enqueue_rejects_non_pending_exam_without_db_write():
 
     with patch(
         "app.controllers.queue.exams.get_exam", new=AsyncMock(return_value=_exam("exam-1", "finished"))
-    ), patch("app.controllers.queue.exams.update_exam", new=AsyncMock()) as mock_update:
+    ), patch("app.controllers.queue.exams.update_exam", new=AsyncMock()) as mock_update, patch(
+        "app.controllers.queue.pages.count_total", new=AsyncMock(return_value=7)
+    ):
         r = _post(app, "/processor/queue/enqueue", {"exam_ids": ["exam-1"]})
 
     body = r.json()
@@ -89,7 +94,7 @@ def test_enqueue_rejects_non_pending_exam_without_db_write():
 
 def test_dequeue_reverts_to_pending_and_wipes_ocr_text():
     queue = QueueService(max_size=10)
-    queue.enqueue("exam-1")
+    queue.enqueue("exam-1", 4)
     app = _make_app(queue)
 
     with patch("app.controllers.queue.pages.clear_ocr_text_for_exam", new=AsyncMock()) as mock_clear, patch(

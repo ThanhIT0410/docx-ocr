@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { ChevronDown, Download } from '@lucide/vue'
+import { ChevronDown, Download, Trash2 } from '@lucide/vue'
 import type { DocumentLayout, OcrPageResult } from '~/types/models'
 
 const props = defineProps<{ exam: NonNullable<ReturnType<typeof useDocumentsStore>['activeExam']> }>()
+
+function deleteExam() {
+  useDocumentsStore().deleteExam(props.exam.id, props.exam.status)
+}
 
 const exporting = ref(false)
 const leftPane = ref<HTMLElement>()
@@ -157,6 +161,9 @@ function syncScroll(from: HTMLElement, to: HTMLElement) {
         <div class="main-sub">{{ exam.pages.length }} trang · hoàn thành {{ formatDateTime(exam.finished_at) }}</div>
       </div>
       <span class="spacer" />
+      <button class="btn btn-ghost btn-icon" title="Xóa đề này" aria-label="Xóa đề" @click="deleteExam">
+        <Trash2 :size="16" />
+      </button>
       <StatusBadge status="finished" />
       <div ref="exportMenuRoot" class="export-menu-wrap">
         <button

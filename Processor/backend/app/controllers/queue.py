@@ -90,8 +90,9 @@ async def enqueue(
             )
             continue
 
+        page_count = await pages.count_total(db, exam_id)
         try:
-            queue.enqueue(exam_id)
+            queue.enqueue(exam_id, page_count)
         except ExamAlreadyQueuedError:
             results.append(EnqueueItemResult(exam_id=exam_id, queued=False, reason="already queued"))
             continue
@@ -103,7 +104,7 @@ async def enqueue(
         await exams.update_exam(db, exam_id, {"status": STATUS_PROCESSING, "started_at": _now_iso()})
         results.append(EnqueueItemResult(exam_id=exam_id, queued=True))
 
-    return EnqueueResponse(results=results, queue_size=queue.qsize(), queue_max_size=queue.max_size)
+    return EnqueueResponse(results=results, queue_size=queue.admitted_pages, queue_max_size=queue.max_size)
 
 
 @router.post("/dequeue", response_model=DequeueResponse)
@@ -129,7 +130,7 @@ async def dequeue(
         )
         results.append(DequeueItemResult(exam_id=exam_id, dequeued=True))
 
-    return DequeueResponse(results=results, queue_size=queue.qsize())
+    return DequeueResponse(results=results, queue_size=queue.admitted_pages)
 
 
 @router.get("/progress", response_model=ProgressResponse)

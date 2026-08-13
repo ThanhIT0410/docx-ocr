@@ -136,6 +136,67 @@ export const useDocumentsStore = defineStore('documents', {
         // eslint-disable-next-line no-console
         console.error('[documents] savePendingChanges failed', err)
       }
+    },
+
+    /** Deletes one exam entirely (pages cascade via FK; Storage objects
+     * don't, so those are removed explicitly first). Blocked while
+     * `status === 'processing'` — checked client-side first for instant
+     * feedback, and enforced again by the `exams_delete_anon` RLS policy
+     * (supabase/schema.sql) in case the status flips between that check
+     * and the actual delete. */
+    async deleteExam(examId: string, status: ExamStatus) {
+      if (status === 'processing') {
+        await useConfirm().alert({
+          title: 'Không thể xóa lúc này',
+          message: 'Đề này đang được xử lý nên chưa thể xóa. Vui lòng đợi xử lý xong (hoặc thất bại) rồi thử lại.'
+        })
+        return
+      }
+
+      const ok = await useConfirm().confirm({
+        title: 'Xóa đề này?',
+        message: 'Toàn bộ trang và kết quả nhận dạng (nếu có) sẽ bị xóa vĩnh viễn. Không thể hoàn tác.',
+        danger: true,
+        confirmLabel: 'Xóa đề'
+      })
+      if (!ok) return
+
+      const supabase = useSupabase()
+      const bucket = storageBucket()
+      try {
+        const { data: pages, error: pagesErr } = await supabase.from('pages').select('file_path').eq('exam_id', examId)
+        if (pagesErr) throw pagesErr
+        if (pages?.length) {
+          await supabase.storage.from(bucket).remove(pages.map(p => p.file_path))
+        }
+
+        const { data, error } = await supabase.from('exams').delete().eq('id', examId).select('id')
+        if (error) throw error
+
+        if (!data || data.length === 0) {
+          // RLS silently filtered the row out — status flipped to
+          // 'processing' in the gap between our check above and this
+          // delete. Not an error, just too late.
+          await useConfirm().alert({
+            title: 'Không thể xóa lúc này',
+            message: 'Đề vừa chuyển sang trạng thái đang xử lý nên chưa thể xóa. Vui lòng thử lại sau.'
+          })
+          await this.fetchLists()
+          return
+        }
+
+        useToast().info('Đã xóa đề')
+        if (this.activeExamId === examId) {
+          this.activeExamId = null
+          this.activeExam = null
+          await navigateTo('/documents')
+        }
+        await this.fetchLists()
+      } catch (err) {
+        useToast().error('Không thể xóa đề — kiểm tra kết nối mạng.')
+        // eslint-disable-next-line no-console
+        console.error('[documents] deleteExam failed', err)
+      }
     }
   }
 })
