@@ -13,8 +13,7 @@ const WORKER_TUNING_DEFAULTS: WorkerTuningSettings = {
   workerPollIntervalSeconds: 5,
   ocrMaxAttempts: 3,
   ocrBackoffBaseSeconds: 2,
-  ocrTemperature: 0.0,
-  ocrMaxTokens: 4096
+  ocrTemperature: 0.8
 }
 const PREPROCESSING_DEFAULTS: PreprocessingSettings = {
   deskew: true,
@@ -91,8 +90,7 @@ onMounted(async () => {
       workerPollIntervalSeconds: settings.workerTuning.workerPollIntervalSeconds ?? WORKER_TUNING_DEFAULTS.workerPollIntervalSeconds,
       ocrMaxAttempts: settings.workerTuning.ocrMaxAttempts ?? WORKER_TUNING_DEFAULTS.ocrMaxAttempts,
       ocrBackoffBaseSeconds: settings.workerTuning.ocrBackoffBaseSeconds ?? WORKER_TUNING_DEFAULTS.ocrBackoffBaseSeconds,
-      ocrTemperature: settings.workerTuning.ocrTemperature ?? WORKER_TUNING_DEFAULTS.ocrTemperature,
-      ocrMaxTokens: settings.workerTuning.ocrMaxTokens ?? WORKER_TUNING_DEFAULTS.ocrMaxTokens
+      ocrTemperature: settings.workerTuning.ocrTemperature ?? WORKER_TUNING_DEFAULTS.ocrTemperature
     })
     Object.assign(preprocessingOriginal, settings.preprocessing)
     Object.assign(preprocessing, {
@@ -239,10 +237,6 @@ async function relaunchNow() {
               <div class="field-row">
                 <label for="ocrTemperature">Temperature</label>
                 <input id="ocrTemperature" v-model.number="workerTuning.ocrTemperature" type="number" min="0" max="2" step="0.1">
-              </div>
-              <div class="field-row">
-                <label for="ocrMaxTokens">Max tokens / lần gọi model</label>
-                <input id="ocrMaxTokens" v-model.number="workerTuning.ocrMaxTokens" type="number" min="256" step="256">
               </div>
             </div>
           </details>

@@ -28,7 +28,7 @@ from supabase import AsyncClient
 from app.repositories import exams, pages
 from app.schemas.models import Page
 from app.services.queue_service import QueueEmptyError, QueueService
-from app.services.result_handler import ResultHandler
+from app.services.result_handler import ResultHandler, UnknownExamError
 
 logger = logging.getLogger(__name__)
 
@@ -86,23 +86,50 @@ class PagePool:
         """Pulls one exam's remaining pages into `_undispatched`. Runs
         outside `_lock` (only the final buffer push is guarded) so the DB
         round-trips here don't serialize other workers doing the same for
-        a different exam."""
-        exam = await exams.get_exam(self._db, exam_id)
-        if exam is None:
-            # Deleted (e.g. admin/reset) between enqueue and now — nothing
-            # to process, nothing to mark failed (the row is gone). Free
-            # its budget and let the caller's loop try the next exam.
-            self._queue.release(exam_id)
-            logger.warning("pop_page: exam vanished before its pages could be activated", extra={"exam_id": exam_id})
-            return
+        a different exam.
 
-        all_pages = await pages.list_pages(self._db, exam_id)
-        existing_results = {p.id: p.ocr_text for p in all_pages if p.ocr_text is not None}
-        remaining = [p for p in all_pages if p.ocr_text is None]
+        Never raises — this is called from `pop_page()`'s hot loop, shared
+        by every worker; letting a transient failure (e.g. a network blip
+        fetching THIS exam's page list) propagate out would crash the
+        entire run via `asyncio.gather`, taking down every other exam's
+        in-flight work over a problem scoped to one exam. Every failure
+        path below instead releases/fails just this one exam and returns,
+        so the caller's loop moves on to the next exam."""
+        started = False
+        try:
+            exam = await exams.get_exam(self._db, exam_id)
+            if exam is None:
+                # Deleted (e.g. admin/reset) between enqueue and now —
+                # nothing to process, nothing to mark failed (the row is
+                # gone). Free its budget and let the caller try the next exam.
+                logger.warning(
+                    "pop_page: exam vanished before its pages could be activated", extra={"exam_id": exam_id}
+                )
+                self._queue.release(exam_id)
+                return
 
-        self._result_handler.start_exam(exam_id, exam.title, total_pages=len(all_pages), existing_results=existing_results)
-        if await self._result_handler.finalize_if_complete(exam_id):
-            return  # every page was already done (fully resumed) — nothing to dispatch
+            all_pages = await pages.list_pages(self._db, exam_id)
+            existing_results = {p.id: p.ocr_text for p in all_pages if p.ocr_text is not None}
+            remaining = [p for p in all_pages if p.ocr_text is None]
 
-        async with self._lock:
-            self._undispatched.extend((exam_id, p) for p in remaining)
+            self._result_handler.start_exam(
+                exam_id, exam.title, total_pages=len(all_pages), existing_results=existing_results
+            )
+            started = True
+            if await self._result_handler.finalize_if_complete(exam_id):
+                return  # every page was already done (fully resumed) — nothing to dispatch
+
+            async with self._lock:
+                self._undispatched.extend((exam_id, p) for p in remaining)
+        except Exception as exc:  # noqa: BLE001 — see docstring: must never propagate out of here
+            logger.exception("pop_page: failed to activate exam", extra={"exam_id": exam_id})
+            if started:
+                # start_exam() already registered it — release() alone
+                # would leave it tracked-but-orphaned (nothing will ever
+                # dispatch its pages this run), so fail it properly instead.
+                try:
+                    await self._result_handler.fail_exam(exam_id, f"Failed to activate exam for OCR: {exc}")
+                except UnknownExamError:
+                    pass
+            else:
+                self._queue.release(exam_id)

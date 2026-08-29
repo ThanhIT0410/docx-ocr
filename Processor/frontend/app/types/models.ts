@@ -15,7 +15,6 @@ export interface WorkerTuningSettings {
   ocrMaxAttempts: number | null
   ocrBackoffBaseSeconds: number | null
   ocrTemperature: number | null
-  ocrMaxTokens: number | null
 }
 
 /** Mirrors electron/settings-store.js's `preprocessing` cluster — same

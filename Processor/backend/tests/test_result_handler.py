@@ -250,6 +250,43 @@ def test_append_after_sibling_page_already_failed_the_exam_raises_unknown():
         _run(handler.append("exam-1", "page-2", FAKE_RESULT))
 
 
+def test_finish_write_failure_still_releases_budget_and_untracks():
+    """DB write for 'finished' is best-effort — if it raises (e.g. transient
+    Supabase error), append() must not leave the exam stuck tracked forever
+    (nothing would ever call append/finalize_if_complete for it again,
+    since every page already has ocr_text). Budget still gets released and
+    tracking still gets dropped so the next run's recovery re-admits it and
+    retries the write."""
+    queue = QueueService(max_size=5)
+    queue.enqueue("exam-1", 1)
+    queue.dequeue()
+    handler = _handler(queue)
+    handler.start_exam("exam-1", "Exam One", total_pages=1)
+
+    with patch("app.services.result_handler.pages.save_ocr_text", new=AsyncMock()), patch(
+        "app.services.result_handler.exams.update_exam", new=AsyncMock(side_effect=RuntimeError("db down"))
+    ):
+        is_complete = _run(handler.append("exam-1", "p1", FAKE_RESULT))
+
+    assert is_complete is True
+    assert handler.is_tracking("exam-1") is False
+    assert queue.admitted_pages == 0
+
+
+def test_fail_exam_write_failure_still_releases_budget_and_untracks():
+    queue = QueueService(max_size=5)
+    queue.enqueue("exam-1", 1)
+    queue.dequeue()
+    handler = _handler(queue)
+    handler.start_exam("exam-1", "Exam One", total_pages=1)
+
+    with patch("app.services.result_handler.exams.update_exam", new=AsyncMock(side_effect=RuntimeError("db down"))):
+        _run(handler.fail_exam("exam-1", "boom"))
+
+    assert handler.is_tracking("exam-1") is False
+    assert queue.admitted_pages == 0
+
+
 def test_abandon_all_clears_tracking_without_touching_db_or_budget():
     """Used only on a pipeline-wide abort (llama.cpp unhealthy) — exams
     stay 'processing' in the DB and their budget stays held (they'll be

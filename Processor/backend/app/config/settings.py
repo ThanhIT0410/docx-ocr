@@ -70,14 +70,22 @@ class Settings(BaseSettings):
     ocr_max_attempts: int = 3
     ocr_backoff_base_seconds: float = 2
 
-    # Sent as `temperature`/`max_tokens` on every chat.completions.create
-    # call (see services/ocr_client.py). The prompt itself lives in code
+    # Sent as `temperature` on every chat.completions.create call (see
+    # services/ocr_client.py). The prompt itself lives in code
     # (app/prompts.py) rather than here or a YAML file — this is no longer
     # something an operator iterates on live without a restart, since
     # getting the HTML layout-block format right is a prompt-engineering
     # problem best reviewed/tested like any other code change.
-    ocr_temperature: float = 0.0
-    ocr_max_tokens: int = 4096
+    #
+    # 0.8, not something closer to greedy: confirmed by direct experiment
+    # that low temperature (tried 0.0 and 0.1) makes this model fall into
+    # repetition loops on dense/degenerate pages — burning through the
+    # entire per-slot context window (ocr_client.py has no `max_tokens`
+    # cap, see its module docstring) without ever reaching a natural stop,
+    # surfacing as OcrTruncatedError even on pages that should have
+    # finished in a fraction of that budget. 0.8 was the value that
+    # actually stopped it in testing; not a default picked in the abstract.
+    ocr_temperature: float = 0.8
 
     # Per-image pixel budget enforced by services/preprocessing.py's
     # smart_resize (ported from Qwen2-VL's own image preprocessing) —
