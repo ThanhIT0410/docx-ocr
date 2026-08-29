@@ -156,6 +156,20 @@ export interface DequeueResponse {
   queue_size: number
 }
 
+/** Mirrors Processor/backend/app/schemas/dto.py::RetryRequest/Response —
+ * moves a batch of 'failed' exams back to 'pending' (operator still
+ * enqueues separately afterward). Does NOT wipe already-OCR'd pages —
+ * see the backend docstring for why. */
+export interface RetryItemResult {
+  exam_id: string
+  retried: boolean
+  reason: string | null
+}
+
+export interface RetryResponse {
+  results: RetryItemResult[]
+}
+
 /** Mirrors Processor/backend/app/schemas/dto.py::ExamProgressItem — one
  * row of GET /processor/queue/progress, for whatever the OCR pipeline is
  * actively working on right now (in-memory on the backend, not the DB). */

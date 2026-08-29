@@ -96,6 +96,30 @@ class DequeueResponse(BaseModel):
     queue_size: int
 
 
+class RetryRequest(BaseModel):
+    """POST /processor/exams/retry body — moves a batch of 'failed' exams
+    back to 'pending' (NOT straight to 'processing'/the OCR queue — the
+    operator still enqueues separately via POST /processor/queue/enqueue,
+    same as any other pending exam, see controllers/exams.py). Deliberately
+    does NOT wipe `pages.ocr_text` (unlike DequeueRequest's cancel, which
+    does) — pages that already OCR'd successfully before some OTHER page
+    failed the exam are left alone, so PagePool's existing resume logic
+    (app/services/page_pool.py) only re-processes the pages that never
+    finished, instead of redoing already-correct work."""
+
+    exam_ids: list[str]
+
+
+class RetryItemResult(BaseModel):
+    exam_id: str
+    retried: bool
+    reason: str | None = None
+
+
+class RetryResponse(BaseModel):
+    results: list[RetryItemResult]
+
+
 class ExamProgressItem(BaseModel):
     """GET /processor/queue/progress entry — deliberately thin (just
     enough for a frontend to render "ExamName 4/8"), not the full

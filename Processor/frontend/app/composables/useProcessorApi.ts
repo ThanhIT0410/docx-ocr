@@ -8,7 +8,8 @@ import type {
   ExamStatus,
   OcrStartResponse,
   ProgressResponse,
-  ResetResponse
+  ResetResponse,
+  RetryResponse
 } from '~/types/models'
 
 /** Thin wrapper around Processor/backend's admin API (app/controllers/*.py).
@@ -64,6 +65,9 @@ export function useProcessorApi() {
 
     dequeueExams: (examIds: string[]) =>
       call<DequeueResponse>('/processor/queue/dequeue', { method: 'POST', body: { exam_ids: examIds } }),
+
+    retryExams: (examIds: string[]) =>
+      call<RetryResponse>('/processor/exams/retry', { method: 'POST', body: { exam_ids: examIds } }),
 
     getQueueProgress: () => call<ProgressResponse>('/processor/queue/progress'),
 
