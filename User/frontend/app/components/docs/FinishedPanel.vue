@@ -167,6 +167,26 @@ function syncScroll(from: HTMLElement, to: HTMLElement) {
   const ratio = from.scrollTop / ((from.scrollHeight - from.clientHeight) || 1)
   to.scrollTop = ratio * (to.scrollHeight - to.clientHeight)
 }
+
+/** Click on a bbox/block: pins the hover-highlight (so it doesn't need the
+ * mouse to keep hovering) and brings BOTH matching elements into view —
+ * hovering alone already links the highlight on both sides (`hoveredKey`),
+ * but if the two panes happen to be scrolled to different pages the
+ * highlighted counterpart can be off-screen, which reads as "nothing
+ * happened" even though it's technically highlighted. Reuses `scrollLock`
+ * so the programmatic scroll here doesn't also trigger the ratio-based
+ * `syncScroll` and drag the other pane somewhere unrelated. */
+function activateBlock(pageId: string, bi: number) {
+  const key = blockKey(pageId, bi)
+  hoveredKey.value = key
+  nextTick(() => {
+    const selector = `[data-block-key="${CSS.escape(key)}"]`
+    const leftEl = leftPane.value?.querySelector<HTMLElement>(selector)
+    const rightEl = rightPane.value?.querySelector<HTMLElement>(selector)
+    if (leftEl) { scrollLock = true; leftEl.scrollIntoView({ block: 'nearest', inline: 'nearest' }) }
+    if (rightEl) { scrollLock = true; rightEl.scrollIntoView({ block: 'nearest', inline: 'nearest' }) }
+  })
+}
 </script>
 
 <template>
@@ -225,8 +245,10 @@ function syncScroll(from: HTMLElement, to: HTMLElement) {
                   :class="{ active: hoveredKey === blockKey(p.id, bi) }"
                   :style="bboxStyle(block, p.ocr_text!)"
                   :title="block.category"
+                  :data-block-key="blockKey(p.id, bi)"
                   @mouseenter="hoveredKey = blockKey(p.id, bi)"
                   @mouseleave="hoveredKey = null"
+                  @click="activateBlock(p.id, bi)"
                 />
               </template>
             </div>
@@ -271,8 +293,10 @@ function syncScroll(from: HTMLElement, to: HTMLElement) {
                 class="layout-block"
                 :class="{ active: hoveredKey === blockKey(p.id, bi) }"
                 :style="{ borderLeftColor: categoryColor(block.category) }"
+                :data-block-key="blockKey(p.id, bi)"
                 @mouseenter="hoveredKey = blockKey(p.id, bi)"
                 @mouseleave="hoveredKey = null"
+                @click="activateBlock(p.id, bi)"
               >
                 <span class="layout-block-label" :style="{ color: categoryColor(block.category) }">{{ block.category.toUpperCase() }}</span>
                 <div class="layout-block-text">{{ plainText(block.text) }}</div>
@@ -332,13 +356,20 @@ function syncScroll(from: HTMLElement, to: HTMLElement) {
   position: absolute; border: 1.5px solid; border-radius: 2px; cursor: pointer;
   transition: background .15s, box-shadow .15s;
 }
-.bbox-box.active { box-shadow: 0 0 0 2px rgba(0, 0, 0, .15) inset; background: rgba(0, 0, 0, .12) !important; }
+.bbox-box.active {
+  z-index: 5; border-color: #FFB300 !important;
+  box-shadow: 0 0 0 2.5px #FFB300, 0 0 12px 2px rgba(255, 179, 0, .75);
+  background: rgba(255, 179, 0, .3) !important;
+}
 .layout-block {
   border: 1px solid var(--line); border-left-width: 4px; border-radius: 6px;
-  padding: 8px 12px; margin-bottom: 10px; cursor: pointer; transition: background .15s;
+  padding: 8px 12px; margin-bottom: 10px; cursor: pointer; transition: background .15s, box-shadow .15s;
 }
 .layout-block:last-child { margin-bottom: 0; }
-.layout-block.active, .layout-block:hover { background: var(--surface-2); }
+.layout-block:hover { background: var(--surface-2); }
+.layout-block.active {
+  background: #FFF3D6; box-shadow: 0 0 0 2px #FFB300 inset;
+}
 .layout-block-label {
   font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; letter-spacing: .04em;
   display: block; margin-bottom: 4px;
