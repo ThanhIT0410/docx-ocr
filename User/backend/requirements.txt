@@ -8,7 +8,7 @@ pymupdf==1.28.0
 pydantic==2.13.4
 pydantic-settings==2.14.2
 
-# JPEG encoding for preview_service.py — PyMuPDF's own Pixmap.tobytes("jpg")
+# PNG encoding for preview_service.py — PyMuPDF's own Pixmap.tobytes("png")
 # measured ~100ms/page (A4 @ 200 DPI); Pillow encoding the same raw pixel
 # buffer measured ~15-18ms/page (steady-state) — see DESIGN_REPORT.md perf
 # note. Not used for anything else (export pipeline has no images yet).

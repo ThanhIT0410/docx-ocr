@@ -218,6 +218,53 @@ def test_run_pipeline_stops_immediately_on_health_check_failure():
             _run(run_pipeline(object(), MagicMock(), MagicMock(), queue, result_handler, settings))
 
 
+def test_health_monitor_unexpected_error_is_treated_as_unhealthy_not_a_crash():
+    """If check_llamacpp_health itself misbehaves (raises something other
+    than returning False) during the periodic check, the monitor task must
+    treat that as unhealthy and stop cleanly — not die silently, which
+    would leave `healthy` permanently set (workers never find out) and
+    would surface as an unrelated crash when run_pipeline awaits the dead
+    task during cleanup. One page kept in flight (slow download) long
+    enough for the periodic check to actually fire before the run would
+    otherwise finish on its own."""
+    settings = _settings(max_concurrent_pages=1, healthcheck_interval_seconds=0.02)
+    queue = QueueService(max_size=100)
+    result_handler = ResultHandler(db=object(), queue=queue)
+    queue.enqueue("exam-1", 1)
+
+    call_count = 0
+
+    async def fake_health(base_url):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return True  # initial synchronous check passes
+        raise RuntimeError("unexpected bug in the health check itself")
+
+    async def fake_get_exam(db, exam_id):
+        return _exam(exam_id)
+
+    async def fake_list_pages(db, exam_id):
+        return [_page("p1", "exam-1", 1)]
+
+    async def slow_download(file_path: str) -> bytes:
+        await asyncio.sleep(0.2)  # long enough for the 0.02s periodic check to fire
+        return b"raw"
+
+    storage = MagicMock()
+    storage.download = AsyncMock(side_effect=slow_download)
+    ocr_client = MagicMock()
+    ocr_client.process_image = AsyncMock(return_value=FAKE_RESULT)
+
+    with _no_recovery(), patch("app.services.ocr_pipeline.check_llamacpp_health", new=fake_health), patch(
+        "app.services.page_pool.exams.get_exam", new=fake_get_exam
+    ), patch("app.services.page_pool.pages.list_pages", new=fake_list_pages), patch(
+        "app.services.ocr_pipeline.preprocess_image", return_value=FAKE_PRE
+    ):
+        with pytest.raises(RuntimeError, match="health check"):
+            _run(run_pipeline(object(), storage, ocr_client, queue, result_handler, settings), timeout=3)
+
+
 def test_run_pipeline_returns_quickly_when_queue_starts_empty():
     """A "run" drains whatever's queued right now and stops — must not
     idle forever waiting for more work to show up."""

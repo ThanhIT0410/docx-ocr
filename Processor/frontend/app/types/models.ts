@@ -15,7 +15,6 @@ export interface WorkerTuningSettings {
   ocrMaxAttempts: number | null
   ocrBackoffBaseSeconds: number | null
   ocrTemperature: number | null
-  ocrMaxTokens: number | null
 }
 
 /** Mirrors electron/settings-store.js's `preprocessing` cluster — same
@@ -154,6 +153,20 @@ export interface DequeueItemResult {
 export interface DequeueResponse {
   results: DequeueItemResult[]
   queue_size: number
+}
+
+/** Mirrors Processor/backend/app/schemas/dto.py::RetryRequest/Response —
+ * moves a batch of 'failed' exams back to 'pending' (operator still
+ * enqueues separately afterward). Does NOT wipe already-OCR'd pages —
+ * see the backend docstring for why. */
+export interface RetryItemResult {
+  exam_id: string
+  retried: boolean
+  reason: string | null
+}
+
+export interface RetryResponse {
+  results: RetryItemResult[]
 }
 
 /** Mirrors Processor/backend/app/schemas/dto.py::ExamProgressItem — one

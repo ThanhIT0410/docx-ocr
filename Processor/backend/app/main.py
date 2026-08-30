@@ -42,7 +42,6 @@ async def lifespan(_app: FastAPI):
         max_attempts=settings.ocr_max_attempts,
         backoff_base_seconds=settings.ocr_backoff_base_seconds,
         temperature=settings.ocr_temperature,
-        max_tokens=settings.ocr_max_tokens,
     )
     _app.state.ocr_pipeline_state = OcrPipelineState()
     # Exams left 'processing' from a run that got closed mid-OCR — put

@@ -2,7 +2,7 @@
 -- DocxOCR — Supabase Storage bucket + policies
 -- Bucket name must match NUXT_PUBLIC_SUPABASE_STORAGE_BUCKET (default:
 -- `exam-pages`). Object key convention used by the frontend:
---   {exam_id}/{page_id}.jpg
+--   {exam_id}/{page_id}.png
 -- ============================================================================
 
 insert into storage.buckets (id, name, public)

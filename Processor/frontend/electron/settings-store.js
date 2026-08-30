@@ -31,8 +31,7 @@ function defaultSettings() {
       workerPollIntervalSeconds: null,
       ocrMaxAttempts: null,
       ocrBackoffBaseSeconds: null,
-      ocrTemperature: null,
-      ocrMaxTokens: null
+      ocrTemperature: null
     },
     preprocessing: {
       deskew: null,
@@ -106,7 +105,6 @@ function toEnvVars(settings) {
   put('PROCESSOR_OCR_MAX_ATTEMPTS', wt.ocrMaxAttempts)
   put('PROCESSOR_OCR_BACKOFF_BASE_SECONDS', wt.ocrBackoffBaseSeconds)
   put('PROCESSOR_OCR_TEMPERATURE', wt.ocrTemperature)
-  put('PROCESSOR_OCR_MAX_TOKENS', wt.ocrMaxTokens)
 
   const pp = settings.preprocessing || {}
   put('PROCESSOR_PREPROCESS_DESKEW', pp.deskew)

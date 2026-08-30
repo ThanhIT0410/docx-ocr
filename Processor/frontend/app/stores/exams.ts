@@ -1,5 +1,5 @@
 import { apiErrorMessage } from '~/composables/useProcessorApi'
-import type { DequeueItemResult, EnqueueItemResult, ExamDetail, ExamListItem, ExamStatus } from '~/types/models'
+import type { DequeueItemResult, EnqueueItemResult, ExamDetail, ExamListItem, ExamStatus, RetryItemResult } from '~/types/models'
 
 const LIST_POLL_MS = 5000
 const DETAIL_POLL_MS = 3000
@@ -10,9 +10,10 @@ const DETAIL_POLL_MS = 3000
 let listTimer: ReturnType<typeof setInterval> | undefined
 let detailTimer: ReturnType<typeof setInterval> | undefined
 
-/** The only two groups a checkbox/bulk action ever appears in — 'finished'
- * and 'failed' exams have no queue-membership action to offer. */
-type SelectableGroup = 'pending' | 'processing'
+/** The only groups a checkbox/bulk action ever appears in — 'finished'
+ * exams have no action to offer. 'failed' offers retry (back to pending),
+ * distinct from 'pending' (enqueue) and 'processing' (dequeue). */
+type SelectableGroup = 'pending' | 'processing' | 'failed'
 
 export const useExamsStore = defineStore('exams', {
   state: () => ({
@@ -171,6 +172,18 @@ export const useExamsStore = defineStore('exams', {
       }
     },
 
+    async retry(examIds: string[]) {
+      try {
+        const res = await useProcessorApi().retryExams(examIds)
+        this._toastBatchResult(res.results, r => r.retried, (n) => `Đã đưa ${n} đề về chờ xử lý — cần vào hàng đợi lại`)
+        this.clearSelection()
+        await this.fetchLists()
+        if (this.activeExamId && examIds.includes(this.activeExamId)) await this.openExam(this.activeExamId)
+      } catch (err) {
+        useToast().error(apiErrorMessage(err, 'Không thể thử lại đề'))
+      }
+    },
+
     _toastBatchResult<T extends { reason: string | null }>(
       results: T[],
       isOk: (r: T) => boolean,
@@ -189,4 +202,4 @@ export const useExamsStore = defineStore('exams', {
   }
 })
 
-export type { DequeueItemResult, EnqueueItemResult }
+export type { DequeueItemResult, EnqueueItemResult, RetryItemResult }

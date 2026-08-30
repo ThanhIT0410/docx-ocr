@@ -41,6 +41,7 @@ failed (a legitimate race — see ocr_pipeline.py's worker loop) hits
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -50,6 +51,8 @@ from app.constants import STATUS_FAILED, STATUS_FINISHED
 from app.repositories import exams, pages
 from app.schemas.models import OcrPageResult
 from app.services.queue_service import QueueService
+
+logger = logging.getLogger(__name__)
 
 
 class UnknownExamError(Exception):
@@ -195,11 +198,23 @@ class ResultHandler:
         tracking so any other in-flight page for this same exam (already
         dispatched to a different worker before this one failed) hits
         `UnknownExamError` in `append` and is discarded rather than
-        resurrecting a 'failed' exam back into 'finished'."""
+        resurrecting a 'failed' exam back into 'finished'.
+
+        The DB write is best-effort (see `_mark_finished_in_db`'s docstring
+        for why): if it fails, budget is released and tracking dropped
+        anyway rather than leaving this exam stuck tracked-but-unreachable
+        for the rest of the run — its DB row stays 'processing', so the
+        next run's `recover_processing_exams` re-admits it for a retry."""
         progress = self._exams.get(exam_id)
         if progress is None:
             raise UnknownExamError(exam_id)
-        await exams.update_exam(self._db, exam_id, {"status": STATUS_FAILED, "error_message": error_message})
+        try:
+            await exams.update_exam(self._db, exam_id, {"status": STATUS_FAILED, "error_message": error_message})
+        except Exception:  # noqa: BLE001 — best-effort, see docstring
+            logger.exception(
+                "fail_exam: DB write failed — untracking anyway, exam will be retried on the next run",
+                extra={"exam_id": exam_id},
+            )
         self._queue.release(exam_id)
         del self._exams[exam_id]
 
@@ -221,13 +236,31 @@ class ResultHandler:
         return abandoned
 
     async def _mark_finished_in_db(self, exam_id: str) -> None:
-        await exams.update_exam(
-            self._db,
-            exam_id,
-            {
-                "status": STATUS_FINISHED,
-                "finished_at": datetime.now(timezone.utc).isoformat(),
-                "error_message": None,
-            },
-        )
+        """The DB write here is best-effort: if it raises (e.g. a transient
+        Supabase error), this still falls through to `release()` rather
+        than propagating — letting the exception escape would leave
+        `exam_id` stuck in `_exams` for the rest of the run (nothing would
+        ever call `append`/`finalize_if_complete` for it again, since every
+        one of its pages already has `ocr_text` saved — see callers), a
+        pure leak. Instead: release its budget and let the caller's `del
+        self._exams[exam_id]` drop it from tracking; its DB row is still
+        'processing' (never became 'finished'), and `pages.ocr_text` is
+        already saved for all of it, so `recover_processing_exams` re-admits
+        it next run and `finalize_if_complete` re-attempts this same write
+        immediately, self-healing once Supabase is reachable again."""
+        try:
+            await exams.update_exam(
+                self._db,
+                exam_id,
+                {
+                    "status": STATUS_FINISHED,
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                    "error_message": None,
+                },
+            )
+        except Exception:  # noqa: BLE001 — best-effort, see docstring
+            logger.exception(
+                "mark_finished: DB write failed — releasing budget anyway, will retry the write on the next run",
+                extra={"exam_id": exam_id},
+            )
         self._queue.release(exam_id)

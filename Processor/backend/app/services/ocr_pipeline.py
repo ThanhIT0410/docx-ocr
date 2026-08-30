@@ -146,13 +146,27 @@ async def run_pipeline(
             )
             for _ in range(max(1, settings.max_concurrent_pages))
         ]
-        await asyncio.gather(*workers)
+        # return_exceptions=True + manual re-raise below, NOT a plain
+        # `await asyncio.gather(*workers)` — with the default
+        # return_exceptions=False, gather() propagates the FIRST worker
+        # exception as soon as it happens but does NOT cancel the other
+        # still-running worker tasks, which would keep dispatching pages
+        # in the background — unsupervised, past the point run_pipeline
+        # itself has already "returned" (raised) to its caller. Waiting
+        # for every worker to actually finish first (success or fail)
+        # closes that leak; only after they've all settled do we surface
+        # whichever exception occurred.
+        results = await asyncio.gather(*workers, return_exceptions=True)
     finally:
         health_monitor.cancel()
         try:
             await health_monitor
         except asyncio.CancelledError:
             pass
+
+    for result in results:
+        if isinstance(result, BaseException):
+            raise result
 
     if not healthy.is_set():
         abandoned = result_handler.abandon_all()
@@ -169,10 +183,26 @@ async def _monitor_health(settings: Settings, healthy: asyncio.Event) -> None:
     """Background task: pings llama.cpp every `healthcheck_interval_seconds`
     and clears `healthy` the moment it fails. Sleeps first — `run_pipeline`
     already did the initial check synchronously before this task was even
-    created, so an immediate re-check here would be redundant."""
+    created, so an immediate re-check here would be redundant.
+
+    Must never raise: `run_pipeline`'s `finally` block awaits this task to
+    clean it up, and an exception escaping here (instead of a normal
+    return/cancellation) would surface at that `await` and could mask
+    whatever `run_pipeline` was already in the middle of reporting. If the
+    health check itself is broken for some unexpected reason, the safest
+    call is to treat that the same as "unhealthy" (stop every worker)
+    rather than let this task die silently — a genuinely dead monitor task
+    would otherwise leave `healthy` permanently set, so workers would never
+    find out anything is wrong."""
     while True:
         await asyncio.sleep(settings.healthcheck_interval_seconds)
-        if not await check_llamacpp_health(settings.llamacpp_base_url):
+        try:
+            ok = await check_llamacpp_health(settings.llamacpp_base_url)
+        except Exception:  # noqa: BLE001 — see docstring
+            logger.exception("health monitor: unexpected error checking llama.cpp health — treating as unhealthy")
+            healthy.clear()
+            return
+        if not ok:
             healthy.clear()
             return
 

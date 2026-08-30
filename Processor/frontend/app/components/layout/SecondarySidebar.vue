@@ -19,7 +19,7 @@ const groups: Array<{ key: 'pending' | 'processing' | 'finished' | 'failed', lab
   { key: 'pending', label: 'Chờ xử lý', selectable: true },
   { key: 'processing', label: 'Đang xử lý', selectable: true },
   { key: 'finished', label: 'Hoàn thành', selectable: false },
-  { key: 'failed', label: 'Lỗi', selectable: false }
+  { key: 'failed', label: 'Lỗi', selectable: true }
 ]
 
 function activeId(): string | null {
@@ -28,17 +28,24 @@ function activeId(): string | null {
 }
 
 // v-if="g.selectable" already guarantees this is only ever called for
-// 'pending'/'processing' — this cast just tells TS what that runtime
-// guard already ensures.
-function asSelectable(key: string): 'pending' | 'processing' {
-  return key as 'pending' | 'processing'
+// 'pending'/'processing'/'failed' — this cast just tells TS what that
+// runtime guard already ensures.
+function asSelectable(key: string): 'pending' | 'processing' | 'failed' {
+  return key as 'pending' | 'processing' | 'failed'
+}
+
+const bulkActionLabel: Record<'pending' | 'processing' | 'failed', string> = {
+  pending: 'Vào hàng đợi',
+  processing: 'Rút khỏi hàng đợi',
+  failed: 'Thử lại (về chờ xử lý)'
 }
 
 function runBulkAction() {
   const ids = [...examsStore.selectedIds]
-  if (!ids.length) return
+  if (!ids.length || !examsStore.selectedGroup) return
   if (examsStore.selectedGroup === 'pending') examsStore.enqueue(ids)
-  else examsStore.dequeue(ids)
+  else if (examsStore.selectedGroup === 'processing') examsStore.dequeue(ids)
+  else examsStore.retry(ids)
 }
 </script>
 
@@ -98,7 +105,7 @@ function runBulkAction() {
       <span class="spacer" />
       <button type="button" class="bulk-clear" @click="examsStore.clearSelection()">Bỏ chọn</button>
       <button type="button" class="btn btn-primary bulk-action" @click="runBulkAction">
-        {{ examsStore.selectedGroup === 'pending' ? 'Vào hàng đợi' : 'Rút khỏi hàng đợi' }}
+        {{ examsStore.selectedGroup ? bulkActionLabel[examsStore.selectedGroup] : '' }}
       </button>
     </div>
   </aside>

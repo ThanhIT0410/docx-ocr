@@ -1,19 +1,29 @@
-"""HTTP routes for viewing exams (§2.1). Business logic is trivial enough
-here (plain reads) to live directly in the handlers — no separate service
-module, matching preview.py/export.py's "controller translates HTTP <->
-service, service does the work" split only where there IS a non-trivial
-service."""
+"""HTTP routes for viewing exams (§2.1) plus one small mutation — POST
+.../retry (moving a 'failed' exam back to 'pending'). Business logic is
+trivial enough here (plain reads, one conditional status flip) to live
+directly in the handlers — no separate service module, matching
+preview.py/export.py's "controller translates HTTP <-> service, service
+does the work" split only where there IS a non-trivial service."""
 from __future__ import annotations
 
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from postgrest.exceptions import APIError
 from supabase import AsyncClient
 
-from app.constants import ALL_STATUSES
+from app.constants import ALL_STATUSES, STATUS_FAILED, STATUS_PENDING
 from app.dependencies import get_db, get_storage
 from app.repositories import exams, pages
-from app.schemas.dto import ExamDetail, ExamListItem, ExamPreviewResponse, PagePreview
+from app.schemas.dto import (
+    ExamDetail,
+    ExamListItem,
+    ExamPreviewResponse,
+    PagePreview,
+    RetryItemResult,
+    RetryRequest,
+    RetryResponse,
+)
 from app.security import require_api_key
 from app.storage.client import StorageHelper
 
@@ -32,6 +42,39 @@ async def list_exams(
 ) -> list[ExamListItem]:
     exam_list = await exams.list_exams(db, status)
     return [ExamListItem.model_validate(e.model_dump()) for e in exam_list]
+
+
+@router.post("/retry", response_model=RetryResponse)
+async def retry(body: RetryRequest, db: AsyncClient = Depends(get_db)) -> RetryResponse:
+    """Moves each 'failed' exam in the batch back to 'pending' — clears
+    `error_message`/`started_at` so it looks like a fresh pending exam (see
+    controllers/queue.py's dequeue for the same clearing convention), but
+    deliberately leaves `pages.ocr_text` untouched (see RetryRequest's
+    docstring). Registered before GET /{exam_id} so "retry" isn't matched
+    as an exam_id path param."""
+    results: list[RetryItemResult] = []
+
+    for exam_id in body.exam_ids:
+        try:
+            exam = await exams.get_exam(db, exam_id)
+        except APIError:
+            results.append(RetryItemResult(exam_id=exam_id, retried=False, reason="not found"))
+            continue
+        if exam is None:
+            results.append(RetryItemResult(exam_id=exam_id, retried=False, reason="not found"))
+            continue
+        if exam.status != STATUS_FAILED:
+            results.append(
+                RetryItemResult(
+                    exam_id=exam_id, retried=False, reason=f"status is '{exam.status}', expected 'failed'"
+                )
+            )
+            continue
+
+        await exams.update_exam(db, exam_id, {"status": STATUS_PENDING, "started_at": None, "error_message": None})
+        results.append(RetryItemResult(exam_id=exam_id, retried=True))
+
+    return RetryResponse(results=results)
 
 
 @router.get("/{exam_id}", response_model=ExamDetail)

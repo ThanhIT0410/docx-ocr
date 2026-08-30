@@ -1,17 +1,38 @@
 <script setup lang="ts">
+import type { ExamListItem, SortField } from '~/stores/documents'
+
 const route = useRoute()
 const docsStore = useDocumentsStore()
 const isUpload = computed(() => route.path.startsWith('/upload'))
 
-const groups: Array<{ key: 'pending' | 'processing' | 'finished', label: string }> = [
+// 'processing' has no group here on purpose — an exam Processor has
+// claimed isn't shown anywhere in this list until it finishes (see
+// stores/documents.ts's ListedStatus doc comment).
+const groups: Array<{ key: 'pending' | 'finished', label: string }> = [
   { key: 'pending', label: 'Chờ xử lý' },
-  { key: 'processing', label: 'Đang xử lý' },
   { key: 'finished', label: 'Hoàn thành' }
+]
+
+const SORT_OPTIONS: Array<{ field: SortField, label: string }> = [
+  { field: 'uploaded_at', label: 'Ngày gửi' },
+  { field: 'finished_at', label: 'Ngày hoàn thành' }
 ]
 
 function activeId(): string | null {
   const id = route.params.id
   return typeof id === 'string' ? id : null
+}
+
+/** Shows whichever date the current sort is actually ordering by, so the
+ * effect of switching sort is visible right on each row — not just a
+ * silent reorder the user has to take on faith. Pending exams have no
+ * `finished_at` yet (see byStatus's doc comment), so they always show the
+ * send date regardless of the chosen sort. */
+function rowDateLabel(d: ExamListItem): string {
+  if (d.status === 'finished' && docsStore.sortBy === 'finished_at' && d.finished_at) {
+    return `Xong ${formatRelativeTime(d.finished_at)}`
+  }
+  return `Gửi ${formatRelativeTime(d.uploaded_at)}`
 }
 </script>
 
@@ -43,6 +64,22 @@ function activeId(): string | null {
       <div class="sec-head">
         <div class="sec-title">Tất cả tài liệu</div>
         <div class="sec-sub">Theo dõi trạng thái xử lý</div>
+        <div class="sort-row">
+          <span class="sort-label">Sắp xếp theo</span>
+          <div class="sort-tabs">
+            <button
+              v-for="opt in SORT_OPTIONS"
+              :key="opt.field"
+              type="button"
+              class="sort-tab"
+              :class="{ active: docsStore.sortBy === opt.field }"
+              :title="`Xếp đề theo ${opt.label.toLowerCase()}, mới nhất lên đầu`"
+              @click="docsStore.setSortBy(opt.field)"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
+        </div>
       </div>
       <div class="sec-body">
         <div v-for="g in groups" :key="g.key" class="sec-group">
@@ -62,7 +99,7 @@ function activeId(): string | null {
             <span class="doc-thumb" aria-hidden="true" />
             <span class="doc-meta">
               <span class="doc-name">{{ d.title }}</span>
-              <span class="doc-info">{{ d.pageCount }} trang</span>
+              <span class="doc-info">{{ d.pageCount }} trang · {{ rowDateLabel(d) }}</span>
             </span>
           </NuxtLink>
         </div>
@@ -80,6 +117,16 @@ function activeId(): string | null {
 .sec-head { padding: 18px 18px 10px; }
 .sec-title { font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
 .sec-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.sort-row { margin-top: 12px; }
+.sort-label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); margin-bottom: 6px; }
+.sort-tabs { display: flex; gap: 4px; }
+.sort-tab {
+  flex: 1; border: 1px solid var(--line); background: var(--surface); color: var(--muted);
+  font-size: 12px; font-weight: 600; padding: 6px 8px; border-radius: 6px;
+  cursor: pointer; transition: all .15s; text-align: center;
+}
+.sort-tab:hover { color: var(--ink); }
+.sort-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .sec-body { flex: 1; overflow-y: auto; padding: 6px 10px 16px; }
 .sec-group { margin-top: 10px; }
 .sec-group-label {

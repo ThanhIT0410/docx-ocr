@@ -109,8 +109,13 @@ def smart_resize(
 
     if (h_bar, w_bar) == (height, width):
         return img
-    # Standard OpenCV convention: area averaging when shrinking, cubic when growing.
-    interpolation = cv2.INTER_AREA if h_bar * w_bar < height * width else cv2.INTER_CUBIC
+    # Area averaging when shrinking (standard OpenCV convention — correctly
+    # anti-aliases by averaging every source pixel into each destination
+    # pixel, unlike cubic/Lanczos which sample rather than average and can
+    # alias on a large downscale). Lanczos (windowed sinc, 8x8 neighborhood)
+    # when growing — sharper than cubic for text/line-art edges, which is
+    # what a page image resized up to meet `min_pixels` actually is.
+    interpolation = cv2.INTER_AREA if h_bar * w_bar < height * width else cv2.INTER_LANCZOS4
     return cv2.resize(img, (w_bar, h_bar), interpolation=interpolation)
 
 

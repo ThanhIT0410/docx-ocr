@@ -46,6 +46,7 @@ from torchcrf import CRF
 
 from app.schemas import DocumentLayout
 from app.services.layout_reconstructor import Column, Section
+from app.services.page_format_normalizer import SUPPORTED_FORMATS
 
 logger = logging.getLogger(__name__)
 
@@ -239,8 +240,8 @@ class LayoutReconstructorV2:
 
     def __init__(
         self,
-        page_width: int = 1654,
-        page_height: int = 2338,
+        page_width: int = SUPPORTED_FORMATS["a4"][0],
+        page_height: int = SUPPORTED_FORMATS["a4"][1],
         model_path: str | Path | None = None,
     ):
         if not page_width or page_width <= 0:

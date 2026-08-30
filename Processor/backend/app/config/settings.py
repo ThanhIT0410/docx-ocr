@@ -70,23 +70,34 @@ class Settings(BaseSettings):
     ocr_max_attempts: int = 3
     ocr_backoff_base_seconds: float = 2
 
-    # Sent as `temperature`/`max_tokens` on every chat.completions.create
-    # call (see services/ocr_client.py). The prompt itself lives in code
+    # Sent as `temperature` on every chat.completions.create call (see
+    # services/ocr_client.py). The prompt itself lives in code
     # (app/prompts.py) rather than here or a YAML file — this is no longer
     # something an operator iterates on live without a restart, since
     # getting the HTML layout-block format right is a prompt-engineering
     # problem best reviewed/tested like any other code change.
-    ocr_temperature: float = 0.0
-    ocr_max_tokens: int = 4096
+    #
+    # 0.8, not something closer to greedy: confirmed by direct experiment
+    # that low temperature (tried 0.0 and 0.1) makes this model fall into
+    # repetition loops on dense/degenerate pages — burning through the
+    # entire per-slot context window (ocr_client.py has no `max_tokens`
+    # cap, see its module docstring) without ever reaching a natural stop,
+    # surfacing as OcrTruncatedError even on pages that should have
+    # finished in a fraction of that budget. 0.8 was the value that
+    # actually stopped it in testing; not a default picked in the abstract.
+    ocr_temperature: float = 0.8
 
     # Per-image pixel budget enforced by services/preprocessing.py's
     # smart_resize (ported from Qwen2-VL's own image preprocessing) —
-    # bounds how many vision tokens each page costs the model. Defaults
-    # match Qwen2-VL's own (min_pixels = 4 * 28² patches; max_pixels =
-    # 120² * 28², i.e. a 3360×3360 cap). This is a *model* input contract,
-    # not an image-quality knob an operator tunes by eye.
-    min_pixels: int = 3136
-    max_pixels: int = 11289600
+    # bounds how many vision tokens each page costs the model. min_pixels =
+    # 2048 * 28² patches, max_pixels = 4096 * 28² patches (2048/4096 vision
+    # tokens) — raised from Qwen2-VL's own stock defaults (4/14400 patches)
+    # after moving to 300 DPI source pages (see ../../../DPI_DEPENDENCIES.md):
+    # a 300 DPI A4 page has far more real detail than the old 200 DPI one,
+    # so the token budget needed raising to actually use it instead of
+    # smart_resize immediately downscaling most of that detail back away.
+    min_pixels: int = 1605632
+    max_pixels: int = 3211264
 
     # --- Preprocessing (image quality, §2.3 step 2) ----------------------------
     # No external YAML file for these anymore (§ new) — like everything

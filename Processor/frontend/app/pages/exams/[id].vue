@@ -96,7 +96,7 @@ const lightboxItems = computed<LightboxItem[]>(() =>
         <div v-if="store.activeExam.status === 'failed'" class="error-block">
           <div class="error-title">Lỗi xử lý</div>
           <div class="error-message">{{ store.activeExam.error_message || '(không có thông điệp lỗi)' }}</div>
-          <div class="hint error-hint">Chưa hỗ trợ xử lý lại tự động — cần thao tác thủ công phía vận hành.</div>
+          <div class="hint error-hint">Các trang đã OCR thành công trước đó vẫn được giữ nguyên khi thử lại.</div>
         </div>
 
         <div class="action-row">
@@ -113,6 +113,13 @@ const lightboxItems = computed<LightboxItem[]>(() =>
             @click="store.dequeue([store.activeExam.id])"
           >
             Rút khỏi hàng đợi
+          </button>
+          <button
+            v-if="store.activeExam.status === 'failed'"
+            class="btn btn-primary"
+            @click="store.retry([store.activeExam.id])"
+          >
+            Thử lại (về chờ xử lý)
           </button>
         </div>
 

@@ -161,10 +161,10 @@ export const useUploadStore = defineStore('upload', {
           const res = await fetch(page.filePath)
           if (!res.ok) throw new Error(`Không tải được ảnh trang từ tiến trình nền (${res.status})`)
           const blob = await res.blob()
-          const objectKey = `${exam.id}/${page.id}.jpg`
+          const objectKey = `${exam.id}/${page.id}.png`
 
           const { error: upErr } = await supabase.storage.from(bucket).upload(objectKey, blob, {
-            contentType: blob.type || 'image/jpeg',
+            contentType: blob.type || 'image/png',
             upsert: false
           })
           if (upErr) throw upErr
