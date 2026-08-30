@@ -107,3 +107,23 @@ def test_pdf_mode_rejects_a_page_with_no_original_image():
     page = ExportPageInput(pageId="p1", order=1, ocrText=None, originalImageUrl="")
     with pytest.raises(ValueError, match="không có ảnh gốc"):
         create_export_service("De thi", "pdf").export([page])
+
+
+def test_drop_stamp_pictures_removes_only_overlapping_pictures():
+    """A `Picture` block overlapping other content is treated as a
+    stamp/watermark and dropped before layout reconstruction ever sees it;
+    a `Picture` that doesn't overlap anything is real content and kept."""
+    from app.services.export_service import LayoutExportService
+
+    stamp = DocumentLayout(bbox=[100, 100, 400, 400], category="Picture", text="")
+    text_under_stamp = DocumentLayout(bbox=[150, 150, 350, 350], category="Text", text="real content")
+    touching_not_overlapping = DocumentLayout(bbox=[400, 100, 600, 400], category="Text", text="beside it")
+    standalone_picture = DocumentLayout(bbox=[600, 600, 800, 800], category="Picture", text="")
+
+    service = LayoutExportService("De thi")
+    kept = service._drop_stamp_pictures([stamp, text_under_stamp, touching_not_overlapping, standalone_picture])
+
+    assert stamp not in kept
+    assert text_under_stamp in kept
+    assert touching_not_overlapping in kept
+    assert standalone_picture in kept

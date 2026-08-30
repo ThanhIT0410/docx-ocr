@@ -45,7 +45,7 @@ import fitz
 from docx import Document
 from PIL import Image
 
-from app.schemas import ExportPageInput, OcrPageResult
+from app.schemas import DocumentLayout, ExportPageInput, OcrPageResult
 from app.services.document_renderer import DocumentRenderer, PlainTextRenderer
 from app.services.layout_reconstructor_v2 import LayoutReconstructorV2
 from app.services.page_format_normalizer import PageFormatNormalizer
@@ -188,6 +188,7 @@ class LayoutExportService(_DocxExportServiceBase):
         blocks = page.layouts
         header, footer = reconstructor.extract_header_footer(blocks)
         main_blocks = [b for b in blocks if b not in header and b not in footer]
+        main_blocks = self._drop_stamp_pictures(main_blocks)
         sections = reconstructor.reconstruct(main_blocks)
 
         # Only left/right are derived from content — top/bottom stay the
@@ -209,6 +210,31 @@ class LayoutExportService(_DocxExportServiceBase):
             dpi=RENDER_DPI,
         )
         renderer.render()
+
+    def _drop_stamp_pictures(self, blocks: list[DocumentLayout]) -> list[DocumentLayout]:
+        """A `Picture` block that spatially overlaps another block on the
+        same page is almost always a stamp/seal/watermark stamped on top of
+        real content, not an actual figure — a genuine photo/diagram in an
+        exam page doesn't normally sit on top of other text. Dropping it
+        here, *before* `LayoutReconstructorV2` ever sees it, keeps it from
+        warping column/section inference (`Column.bbox` is a union of its
+        blocks' bboxes — one wide stray "Picture" box would blow that out)
+        and from stealing a spot from real content in the rendered output.
+        Runs before `reconstruct()`'s column/section pipeline, on the same
+        `main_blocks` list `_content_margins` also derives margins from, so
+        a dropped stamp is excluded from both."""
+        stamp_free = []
+        dropped = 0
+        for block in blocks:
+            if block.category == "Picture" and any(
+                other is not block and _bboxes_overlap(block.bbox, other.bbox) for other in blocks
+            ):
+                dropped += 1
+                continue
+            stamp_free.append(block)
+        if dropped:
+            logger.info("dropped %d Picture block(s) overlapping other content (stamp/watermark)", dropped)
+        return stamp_free
 
     def _content_margins(self, starts: list[float], ends: list[float], extent: int) -> tuple[float, float]:
         """Derives a (start_margin, end_margin) pair — e.g. (left, right) —
@@ -321,6 +347,14 @@ def create_export_service(title: str, mode: str = "layout") -> BaseExportService
     if mode == "pdf":
         return PdfExportService(title)
     return LayoutExportService(title)
+
+
+def _bboxes_overlap(a: list[float], b: list[float]) -> bool:
+    """Strict rectangle-intersection test (`[x1, y1, x2, y2]` each) — merely
+    touching edges don't count, only a real positive-area overlap."""
+    ax1, ay1, ax2, ay2 = a
+    bx1, by1, bx2, by2 = b
+    return ax1 < bx2 and bx1 < ax2 and ay1 < by2 and by1 < ay2
 
 
 def _ascii_filename(title: str) -> str:
