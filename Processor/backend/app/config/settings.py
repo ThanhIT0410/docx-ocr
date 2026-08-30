@@ -89,12 +89,15 @@ class Settings(BaseSettings):
 
     # Per-image pixel budget enforced by services/preprocessing.py's
     # smart_resize (ported from Qwen2-VL's own image preprocessing) —
-    # bounds how many vision tokens each page costs the model. Defaults
-    # match Qwen2-VL's own (min_pixels = 4 * 28² patches; max_pixels =
-    # 120² * 28², i.e. a 3360×3360 cap). This is a *model* input contract,
-    # not an image-quality knob an operator tunes by eye.
-    min_pixels: int = 3136
-    max_pixels: int = 11289600
+    # bounds how many vision tokens each page costs the model. min_pixels =
+    # 2048 * 28² patches, max_pixels = 4096 * 28² patches (2048/4096 vision
+    # tokens) — raised from Qwen2-VL's own stock defaults (4/14400 patches)
+    # after moving to 300 DPI source pages (see ../../../DPI_DEPENDENCIES.md):
+    # a 300 DPI A4 page has far more real detail than the old 200 DPI one,
+    # so the token budget needed raising to actually use it instead of
+    # smart_resize immediately downscaling most of that detail back away.
+    min_pixels: int = 1605632
+    max_pixels: int = 3211264
 
     # --- Preprocessing (image quality, §2.3 step 2) ----------------------------
     # No external YAML file for these anymore (§ new) — like everything

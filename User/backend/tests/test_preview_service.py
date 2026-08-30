@@ -1,11 +1,12 @@
-"""Covers `_to_jpeg_bytes` — switched from PyMuPDF's own `Pixmap.tobytes("jpg")`
+"""Covers `_to_png_bytes` — switched from PyMuPDF's own `Pixmap.tobytes("png")`
 to Pillow for speed (~100ms -> ~15-18ms per A4@200DPI page, see
 requirements.txt), which meant re-doing alpha flattening by hand. That
 surfaced a real bug while testing against a real translucent PNG: PyMuPDF's
 alpha-carrying pixmaps are *premultiplied*, so naively compositing with
 Pillow's `Image.paste(mask=alpha)` (which assumes straight alpha) applies
 the alpha weighting twice and produces visibly wrong colors. These tests
-pin the correct behavior."""
+pin the correct behavior. PNG is lossless, so — unlike when this wrote
+JPEG — pixel values are asserted exactly rather than within a tolerance."""
 from __future__ import annotations
 
 import io
@@ -13,7 +14,7 @@ import io
 import fitz
 from PIL import Image
 
-from app.services.preview_service import _to_jpeg_bytes
+from app.services.preview_service import _to_png_bytes
 
 
 def test_opaque_rgb_pixmap_roundtrips_color():
@@ -22,14 +23,10 @@ def test_opaque_rgb_pixmap_roundtrips_color():
     page.draw_rect(fitz.Rect(0, 0, 100, 100), color=(0, 1, 0), fill=(0, 1, 0))
     pix = page.get_pixmap()
 
-    jpeg_bytes = _to_jpeg_bytes(pix)
-    img = Image.open(io.BytesIO(jpeg_bytes))
+    png_bytes = _to_png_bytes(pix)
+    img = Image.open(io.BytesIO(png_bytes))
     assert img.mode == "RGB"
-    r, g, b = img.getpixel((50, 50))
-    # JPEG is lossy even on a flat color (chroma subsampling) — allow a
-    # couple of units of drift rather than requiring a bit-exact match.
-    assert (r, g, b) != (0, 0, 0)
-    assert max(abs(r - 0), abs(g - 255), abs(b - 0)) <= 3
+    assert img.getpixel((50, 50)) == (0, 255, 0)
     doc.close()
 
 
@@ -44,13 +41,13 @@ def test_translucent_png_composites_correctly_onto_white():
     pix = fitz.Pixmap(buf.getvalue())
     assert pix.alpha  # sanity: this PNG really does carry alpha
 
-    jpeg_bytes = _to_jpeg_bytes(pix)
-    img = Image.open(io.BytesIO(jpeg_bytes))
+    png_bytes = _to_png_bytes(pix)
+    img = Image.open(io.BytesIO(png_bytes))
     assert img.mode == "RGB"
     r, g, b = img.getpixel((10, 10))
-    assert abs(r - 255) <= 3
-    assert abs(g - 127) <= 3
-    assert abs(b - 127) <= 3
+    assert abs(r - 255) <= 1
+    assert abs(g - 127) <= 1
+    assert abs(b - 127) <= 1
 
 
 def test_grayscale_pixmap_encodes_without_error():
@@ -59,7 +56,7 @@ def test_grayscale_pixmap_encodes_without_error():
     pix = page.get_pixmap(colorspace=fitz.csGRAY)
     assert pix.n == 1
 
-    jpeg_bytes = _to_jpeg_bytes(pix)
-    img = Image.open(io.BytesIO(jpeg_bytes))
+    png_bytes = _to_png_bytes(pix)
+    img = Image.open(io.BytesIO(png_bytes))
     assert img.size == (50, 50)
     doc.close()

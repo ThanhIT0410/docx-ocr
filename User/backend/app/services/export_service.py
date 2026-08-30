@@ -38,6 +38,7 @@ from app.schemas import ExportPageInput, OcrPageResult
 from app.services.document_renderer import DocumentRenderer, PlainTextRenderer
 from app.services.layout_reconstructor_v2 import LayoutReconstructorV2
 from app.services.page_format_normalizer import PageFormatNormalizer
+from app.services.preview_service import RENDER_DPI
 
 logger = logging.getLogger(__name__)
 
@@ -45,11 +46,13 @@ DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingm
 
 # Margin derivation tuning (LayoutExportService.reconstruct, see
 # _content_margins below) — trims 5% of extreme values off each end before
-# taking min/max, then hard-clamps to [50, 200] px (@200dpi: ~0.25in-1in)
-# regardless of what trimming produced.
+# taking min/max, then hard-clamps to [0.25in, 1in] regardless of what
+# trimming produced. In pixels at RENDER_DPI, not a hardcoded pair computed
+# once at whatever DPI happened to be in use (see ../../../DPI_DEPENDENCIES.md
+# finding #4).
 _MARGIN_TRIM_PCT = 0.05
-_MARGIN_MIN_PX = 50
-_MARGIN_MAX_PX = 200
+_MARGIN_MIN_PX = round(0.25 * RENDER_DPI)
+_MARGIN_MAX_PX = round(1.0 * RENDER_DPI)
 
 
 class UnsupportedPageAspectRatioError(Exception):
@@ -167,6 +170,7 @@ class LayoutExportService(BaseExportService):
             page_width=page_width, page_height=page_height, orientation=orientation,
             start_new_page=not self._is_first_page,
             left_margin=left_margin, right_margin=right_margin,
+            dpi=RENDER_DPI,
         )
         renderer.render()
 

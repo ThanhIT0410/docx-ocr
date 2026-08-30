@@ -61,10 +61,25 @@ from lxml import etree
 
 from app.schemas import DocumentLayout
 from app.services.layout_reconstructor import Column, Section
+from app.services.preview_service import RENDER_DPI
 
 import logging
 
 logger = logging.getLogger(__name__)
+
+# DocumentRenderer's page/margin defaults, in physical inches rather than
+# hardcoded pixels — so they scale automatically if RENDER_DPI changes
+# instead of silently assuming whatever DPI they were last hand-computed
+# at (see ../../../DPI_DEPENDENCIES.md). page_width/page_height default to
+# A4; left/top/bottom/right are the prototype's original 0.75in/0.5in.
+# `export_service.py::LayoutExportService.reconstruct` always passes its
+# own page_width/page_height/left_margin/right_margin explicitly — these
+# defaults only matter for top_margin/bottom_margin (which it does NOT
+# override, see that method's comment) and any other/future caller.
+_DEFAULT_PAGE_WIDTH_PX = round(8.2677 * RENDER_DPI)
+_DEFAULT_PAGE_HEIGHT_PX = round(11.6929 * RENDER_DPI)
+_DEFAULT_LEFT_MARGIN_PX = round(0.75 * RENDER_DPI)
+_DEFAULT_MARGIN_PX = round(0.5 * RENDER_DPI)
 
 default_font_sizes = {
     "Title": 22,
@@ -395,15 +410,15 @@ class DocumentRenderer(BlockRenderer):
         sections: list[Section],
         header: list[DocumentLayout],
         footer: list[DocumentLayout],
-        page_width: int = 1654,
-        page_height: int = 2338,
+        page_width: int = _DEFAULT_PAGE_WIDTH_PX,
+        page_height: int = _DEFAULT_PAGE_HEIGHT_PX,
         orientation: str = "portrait",
         start_new_page: bool = False,
-        left_margin: int = 150,
-        right_margin: int = 100,
-        top_margin: int = 100,
-        bottom_margin: int = 100,
-        dpi: int = 200,
+        left_margin: int = _DEFAULT_LEFT_MARGIN_PX,
+        right_margin: int = _DEFAULT_MARGIN_PX,
+        top_margin: int = _DEFAULT_MARGIN_PX,
+        bottom_margin: int = _DEFAULT_MARGIN_PX,
+        dpi: int = RENDER_DPI,
     ):
         self.doc = doc
         self.sections = sections
@@ -550,7 +565,7 @@ class DocumentRenderer(BlockRenderer):
         for "how much room this column really has" than this column's own
         (possibly narrow) content — the last column has no next column to
         borrow that bound from, so it's left as-is."""
-        twips_per_px = 7.2  # matches `_set_section_layout`'s `scale` and `_px_to_twips` at dpi=200
+        twips_per_px = 1440 / self.dpi  # same ratio `_set_section_layout`'s `scale` and `_px_to_twips` use
         gap_per_col_px = 240 / twips_per_px
 
         raw = []
@@ -576,7 +591,7 @@ class DocumentRenderer(BlockRenderer):
         cols_xml.set(qn("w:num"), str(num_columns))
         for c in cols_xml.findall(qn("w:col")):
             cols_xml.remove(c)
-        scale = 7.2
+        scale = 1440 / self.dpi  # same ratio _px_to_twips/_column_widths_px use
         if col_widths:
             cols_xml.set(qn("w:equalWidth"), "0")
             for i, width in enumerate(col_widths):

@@ -22,7 +22,7 @@ const PREPROCESSING_DEFAULTS: PreprocessingSettings = {
   contrastClipLimit: 2.0,
   contrastTileGridSize: 8
 }
-const MAX_PIXELS_DEFAULT = 11289600
+const MAX_PIXELS_DEFAULT = 3211264
 
 const isElectron = useIsElectron()
 const pipeline = usePipelineStore()

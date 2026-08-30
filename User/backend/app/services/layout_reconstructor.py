@@ -20,7 +20,8 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from app.schemas import DocumentLayout
-from app.services.page_format_normalizer import union_bbox
+from app.services.page_format_normalizer import SUPPORTED_FORMATS, union_bbox
+from app.services.preview_service import RENDER_DPI
 
 logger = logging.getLogger(__name__)
 
@@ -46,10 +47,10 @@ class Section:
 class LayoutReconstructor:
     def __init__(
         self,
-        page_width: int = 1654,
-        page_height: int = 2338,
-        left_margin: int = 150,
-        right_margin: int = 100,
+        page_width: int = SUPPORTED_FORMATS["a4"][0],
+        page_height: int = SUPPORTED_FORMATS["a4"][1],
+        left_margin: int = round(0.75 * RENDER_DPI),
+        right_margin: int = round(0.5 * RENDER_DPI),
         coverage_weight: float = 0.95,
         alignment_weight: float = 0.05,
         lmbda: float = 0.65,

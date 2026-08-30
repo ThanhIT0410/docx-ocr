@@ -2,12 +2,17 @@
 
 Disk layout: {data_dir}/previews/{previewId}/
   index.json   -- { previewId, title, createdAt, pages: [{id, order, source, file}] }
-  {page.file}  -- always a `{uuid}.jpg` — every page is normalized to real
-                  JPEG on the way in (split PDF pages are rendered straight
-                  to JPEG; picked images are re-encoded unless already
-                  JPEG), so the on-disk extension is never a lie and the
+  {page.file}  -- always a `{uuid}.png` — every page is normalized to real
+                  PNG on the way in (split PDF pages are rendered straight
+                  to PNG; picked images are re-encoded unless already
+                  PNG), so the on-disk extension is never a lie and the
                   Supabase object key built in stores/upload.ts (which is
-                  always `.jpg`) matches the actual bytes.
+                  always `.png`) matches the actual bytes. PNG (lossless),
+                  not JPEG: these are rendered/scanned document pages —
+                  mostly flat text/lines — where JPEG's block artifacts
+                  around sharp edges (small glyphs, table rulings) actively
+                  hurt OCR fidelity for no real size win on this kind of
+                  content, unlike a photograph.
 
 One JSON file per preview keeps this crash-safe and trivially recoverable
 (GET /preview, §9.2 "phục vụ trường hợp người dùng tắt ứng dụng giữa chừng")
@@ -30,8 +35,7 @@ from PIL import Image
 
 from app.config import settings
 
-RENDER_DPI = 200
-JPEG_QUALITY = 90
+RENDER_DPI = 300
 
 # Pixmap.n (bytes/pixel, alpha included) -> matching Pillow mode. Anything
 # else (e.g. CMYK, which get_pixmap() never produces without an explicit
@@ -40,22 +44,27 @@ JPEG_QUALITY = 90
 _PIL_MODE_BY_N = {1: "L", 2: "LA", 3: "RGB", 4: "RGBA"}
 
 
-def _to_jpeg_bytes(pix: fitz.Pixmap) -> bytes:
-    """Encodes via Pillow, not PyMuPDF's own `Pixmap.tobytes("jpg")` — same
-    input pixels, measured ~5-7x faster (~100ms vs ~15-18ms per A4 @ 200 DPI
-    page after warmup) — this was the actual bottleneck behind slow PDF
-    splitting (`create()` below calls this once per page, sequentially).
-    JPEG has no alpha channel, so an alpha-carrying pixmap (e.g. a PNG
-    upload with transparency) is flattened onto white rather than left to
-    error out inside Pillow's JPEG encoder. PyMuPDF's `pix.samples` for an
-    alpha-carrying pixmap is *premultiplied* (verified directly: a
-    (255,0,0,128) source pixel comes back as raw samples (128,0,0,128), i.e.
-    RGB already scaled by alpha/255) — compositing that with Pillow's
-    `Image.paste(mask=alpha)`, which assumes straight (non-premultiplied)
-    alpha, applies the alpha weighting twice and produces visibly wrong
-    colors in translucent areas. The correct "premultiplied over background"
-    formula is `premult_rgb + bg * (1 - alpha)` (no un-premultiplying
-    needed), done here via numpy since PIL has no built-in for it."""
+def _to_png_bytes(pix: fitz.Pixmap) -> bytes:
+    """Encodes via Pillow, not PyMuPDF's own `Pixmap.tobytes("png")` — same
+    input pixels, measured ~5-7x faster (~100ms vs ~15-18ms per A4 page,
+    measured at 200 DPI — proportionally more pixels at the current
+    RENDER_DPI, but the same relative speedup) — this was the actual
+    bottleneck behind slow PDF splitting (`create()` below calls this once
+    per page, sequentially).
+    A page image is always opaque (there's no such thing as a "transparent"
+    document page), so any alpha-carrying pixmap (e.g. a PNG upload with
+    transparency) is flattened onto white rather than saved with a
+    (meaningless here, and a source of decode surprises downstream —
+    Processor's cv2.imdecode drops/mishandles alpha) transparent
+    background. PyMuPDF's `pix.samples` for an alpha-carrying pixmap is
+    *premultiplied* (verified directly: a (255,0,0,128) source pixel comes
+    back as raw samples (128,0,0,128), i.e. RGB already scaled by
+    alpha/255) — compositing that with Pillow's `Image.paste(mask=alpha)`,
+    which assumes straight (non-premultiplied) alpha, applies the alpha
+    weighting twice and produces visibly wrong colors in translucent areas.
+    The correct "premultiplied over background" formula is
+    `premult_rgb + bg * (1 - alpha)` (no un-premultiplying needed), done
+    here via numpy since PIL has no built-in for it."""
     mode = _PIL_MODE_BY_N.get(pix.n)
     if mode is None:
         pix = fitz.Pixmap(fitz.csRGB, pix)
@@ -69,7 +78,7 @@ def _to_jpeg_bytes(pix: fitz.Pixmap) -> bytes:
         img = Image.fromarray(composited, mode=mode[:-1])
 
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=JPEG_QUALITY)
+    img.save(buf, format="PNG")
     return buf.getvalue()
 
 
@@ -132,24 +141,24 @@ class PreviewService:
                 zoom = RENDER_DPI / 72
                 matrix = fitz.Matrix(zoom, zoom)
                 for page in doc:
-                    jpeg_bytes = _to_jpeg_bytes(page.get_pixmap(matrix=matrix))
+                    png_bytes = _to_png_bytes(page.get_pixmap(matrix=matrix))
                     page_id = str(uuid.uuid4())
-                    file_name = f"{page_id}.jpg"
-                    (preview_dir / file_name).write_bytes(jpeg_bytes)
+                    file_name = f"{page_id}.png"
+                    (preview_dir / file_name).write_bytes(png_bytes)
                     pages.append(PreviewPage(id=page_id, order=order, source=filename, file=file_name))
                     order += 1
                 doc.close()
             else:
-                # Already JPEG: keep the original bytes as-is (no lossy
-                # re-encode for nothing). Anything else (PNG today — the
-                # only other type the upload UI accepts) gets decoded and
-                # re-encoded to JPEG so every page on disk is the same
-                # lightweight format regardless of what was uploaded.
-                is_jpeg = content_type == "image/jpeg" or filename.lower().endswith((".jpg", ".jpeg"))
-                jpeg_bytes = content if is_jpeg else _to_jpeg_bytes(fitz.Pixmap(content))
+                # Already PNG: keep the original bytes as-is (no re-encode
+                # for nothing). Anything else (JPEG today — the only other
+                # type the upload UI accepts) gets decoded and re-encoded to
+                # PNG so every page on disk is the same format regardless of
+                # what was uploaded.
+                is_png = content_type == "image/png" or filename.lower().endswith(".png")
+                png_bytes = content if is_png else _to_png_bytes(fitz.Pixmap(content))
                 page_id = str(uuid.uuid4())
-                file_name = f"{page_id}.jpg"
-                (preview_dir / file_name).write_bytes(jpeg_bytes)
+                file_name = f"{page_id}.png"
+                (preview_dir / file_name).write_bytes(png_bytes)
                 pages.append(PreviewPage(id=page_id, order=order, source=filename, file=file_name))
                 order += 1
 
