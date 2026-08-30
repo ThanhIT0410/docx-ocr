@@ -4,6 +4,7 @@ rule-based/ML switch), and `PlainTextExportService` (mode='plain') skips
 reconstruction entirely — see `export_service.py`'s module docstring."""
 from __future__ import annotations
 
+import pytest
 from docx import Document
 
 from app.schemas import DocumentLayout, ExportPageInput, OcrPageResult
@@ -66,3 +67,43 @@ def test_plain_mode_skips_reconstruction_and_keeps_a_real_table():
     # delimiters are still markup, not content — must not leak into the text.
     assert "Bold title" in body_text
     assert "**" not in body_text
+
+
+def test_pdf_mode_reassembles_original_images_ignoring_ocr_text(tmp_path):
+    """mode='pdf' must not touch ocrText at all (a page with none must still
+    export fine) — it just re-fetches each page's original image
+    (`originalImageUrl`, here a local `file://` URL standing in for a
+    Supabase signed URL) and stacks them into one PDF, in page order, sized
+    to each image's own physical dimensions."""
+    from PIL import Image
+
+    from app.services.export_service import RENDER_DPI
+
+    path1 = tmp_path / "p1.png"
+    Image.new("RGB", (RENDER_DPI * 2, RENDER_DPI * 3), color="white").save(path1)  # 2in x 3in
+    path2 = tmp_path / "p2.png"
+    Image.new("RGB", (RENDER_DPI * 4, RENDER_DPI * 1), color="black").save(path2)  # 4in x 1in
+
+    # Deliberately out of order, to check `export()` still sorts by `order`.
+    page2 = ExportPageInput(pageId="p2", order=2, ocrText=None, originalImageUrl=path2.as_uri())
+    page1 = ExportPageInput(pageId="p1", order=1, ocrText=None, originalImageUrl=path1.as_uri())
+
+    result = create_export_service("De thi anh", "pdf").export([page2, page1])
+    assert result.filename == "De thi anh.pdf"
+    assert result.media_type == "application/pdf"
+
+    import fitz
+
+    doc = fitz.open(stream=result.content, filetype="pdf")
+    assert doc.page_count == 2
+    assert doc[0].rect.width == pytest.approx(2 * 72, abs=1)
+    assert doc[0].rect.height == pytest.approx(3 * 72, abs=1)
+    assert doc[1].rect.width == pytest.approx(4 * 72, abs=1)
+    assert doc[1].rect.height == pytest.approx(1 * 72, abs=1)
+    doc.close()
+
+
+def test_pdf_mode_rejects_a_page_with_no_original_image():
+    page = ExportPageInput(pageId="p1", order=1, ocrText=None, originalImageUrl="")
+    with pytest.raises(ValueError, match="không có ảnh gốc"):
+        create_export_service("De thi", "pdf").export([page])

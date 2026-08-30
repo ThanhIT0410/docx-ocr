@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ChevronDown, Download, Trash2 } from '@lucide/vue'
+import { ChevronDown, Download, FileImage, FileText, Trash2 } from '@lucide/vue'
 import type { DocumentLayout, OcrPageResult } from '~/types/models'
 
 const props = defineProps<{ exam: NonNullable<ReturnType<typeof useDocumentsStore>['activeExam']> }>()
@@ -15,8 +15,24 @@ const rightPane = ref<HTMLElement>()
 const showExportMenu = ref(false)
 const exportMenuRoot = ref<HTMLElement>()
 const EXPORT_MODES = [
-  { mode: 'layout' as const, label: 'Giữ layout', desc: 'Bảng, cột, tiêu đề sắp xếp như trang gốc' },
-  { mode: 'plain' as const, label: 'Text thuần', desc: 'Nối văn bản tuần tự, không giữ bố cục trang' }
+  {
+    mode: 'layout' as const,
+    label: 'DOCX, giữ layout',
+    desc: 'File Word — bảng, cột, tiêu đề sắp xếp giống trang gốc',
+    icon: FileText
+  },
+  {
+    mode: 'plain' as const,
+    label: 'DOCX, text thuần',
+    desc: 'File Word — chỉ có chữ, nối theo thứ tự, không giữ bố cục',
+    icon: FileText
+  },
+  {
+    mode: 'pdf' as const,
+    label: 'PDF',
+    desc: 'Ghép ảnh gốc các trang lại thành 1 file PDF, không nhận dạng chữ',
+    icon: FileImage
+  }
 ]
 
 function onDocumentClick(e: MouseEvent) {
@@ -101,7 +117,7 @@ function boxedLayoutBlocks(raw: unknown): DocumentLayout[] {
   return layoutBlocks(raw).filter(b => b.bbox?.length === 4)
 }
 
-async function exportResult(mode: 'layout' | 'plain') {
+async function exportResult(mode: 'layout' | 'plain' | 'pdf') {
   showExportMenu.value = false
   exporting.value = true
   useToast().info('Đang xuất kết quả OCR…')
@@ -181,10 +197,14 @@ function syncScroll(from: HTMLElement, to: HTMLElement) {
             :key="opt.mode"
             type="button"
             class="export-menu-item"
+            :title="opt.desc"
             @click="exportResult(opt.mode)"
           >
-            <span class="export-menu-label">{{ opt.label }}</span>
-            <span class="export-menu-desc">{{ opt.desc }}</span>
+            <component :is="opt.icon" :size="20" class="export-menu-icon" />
+            <span class="export-menu-text">
+              <span class="export-menu-label">{{ opt.label }}</span>
+              <span class="export-menu-desc">{{ opt.desc }}</span>
+            </span>
           </button>
         </div>
       </div>
@@ -276,18 +296,20 @@ function syncScroll(from: HTMLElement, to: HTMLElement) {
 .spacer { flex: 1; }
 .export-menu-wrap { position: relative; }
 .export-menu {
-  position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; min-width: 240px;
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 20; min-width: 280px;
   background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
   box-shadow: var(--shadow-md, var(--shadow-sm)); padding: 6px; display: flex; flex-direction: column; gap: 2px;
 }
 .export-menu-item {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  display: flex; align-items: center; gap: 12px;
   text-align: left; border: none; background: transparent; border-radius: 6px;
-  padding: 8px 10px; cursor: pointer; transition: background .15s;
+  padding: 10px; cursor: pointer; transition: background .15s;
 }
 .export-menu-item:hover { background: var(--surface-2); }
-.export-menu-label { font-size: 13.5px; font-weight: 600; color: var(--ink); }
-.export-menu-desc { font-size: 11.5px; color: var(--muted); }
+.export-menu-icon { flex: none; color: var(--accent); }
+.export-menu-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.export-menu-label { font-size: 14px; font-weight: 600; color: var(--ink); }
+.export-menu-desc { font-size: 12px; color: var(--muted); line-height: 1.4; }
 .split { display: grid; grid-template-columns: 1fr auto 1fr; gap: 0; flex: 1; min-height: 0; padding: 26px; }
 .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .pane-head {

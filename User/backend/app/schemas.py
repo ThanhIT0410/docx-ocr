@@ -89,4 +89,4 @@ class ExportRequest(BaseModel):
     examId: str
     title: str
     pages: list[ExportPageInput]
-    mode: Literal["layout", "plain"] = "layout"
+    mode: Literal["layout", "plain", "pdf"] = "layout"
