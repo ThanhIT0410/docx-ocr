@@ -55,6 +55,12 @@ async function createWindow() {
     minWidth: 1024,
     minHeight: 680,
     backgroundColor: '#EEF1F5',
+    // Only set in dev: there's no packaged .exe yet to inherit an icon
+    // from, and `build/` isn't part of the packaged app's own files (see
+    // electron-builder.yml's `files:`) — the packaged app instead gets its
+    // icon "for free" from the .exe resource electron-builder embeds via
+    // `win.icon`, which Windows uses for the taskbar/title bar on its own.
+    ...(isDev ? { icon: path.join(__dirname, '..', 'build', 'icon.ico') } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
