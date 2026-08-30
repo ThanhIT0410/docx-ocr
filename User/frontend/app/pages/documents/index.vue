@@ -2,7 +2,7 @@
 const store = useDocumentsStore()
 
 onMounted(() => {
-  const first = store.pending[0] ?? store.processing[0] ?? store.finished[0]
+  const first = store.pending[0] ?? store.finished[0]
   if (first) navigateTo(`/documents/${first.id}`)
 })
 </script>
@@ -12,7 +12,7 @@ onMounted(() => {
     <div class="main-head"><div class="main-title">Tất cả tài liệu</div></div>
     <div class="main-body">
       <div class="empty-note" style="padding-top:60px">
-        {{ store.pending.length || store.processing.length || store.finished.length
+        {{ store.pending.length || store.finished.length
           ? 'Chọn một tài liệu ở thanh bên để xem.'
           : 'Chưa có tài liệu nào — hãy tải đề lên để bắt đầu.' }}
       </div>

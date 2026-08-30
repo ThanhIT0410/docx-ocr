@@ -17,25 +17,45 @@ export interface SignedPage extends PageRecord {
 // so a plain module-level variable is the correct home for it.
 let realtimeChannel: RealtimeChannel | null = null
 
+/** Only these two groups are ever shown in "Tất cả tài liệu" — a
+ * 'processing' exam (Processor has claimed it) is deliberately not shown
+ * anywhere in that list while it's mid-flight; it reappears once
+ * `status` flips to 'finished'. If the user has that exam's detail page
+ * open when it flips, `openExam()`'s own status field still updates
+ * normally and the page switches to the read-only Processing view — this
+ * only affects the *list*, not a page already open. */
+export type ListedStatus = 'pending' | 'finished'
+export type SortField = 'uploaded_at' | 'finished_at'
+
 export const useDocumentsStore = defineStore('documents', {
   state: () => ({
     pending: [] as ExamListItem[],
-    processing: [] as ExamListItem[],
     finished: [] as ExamListItem[],
     recent: [] as ExamListItem[],
     activeExamId: null as string | null,
     activeExam: null as (Omit<ExamWithPages, 'pages'> & { pages: SignedPage[] }) | null,
     loadingLists: false,
     loadingActive: false,
-    offline: false
+    offline: false,
+    /** Applies to both groups below — except 'pending' exams have no
+     * `finished_at` yet, so choosing that sort leaves the Pending group in
+     * its normal (upload-time) order instead of doing nothing useful. */
+    sortBy: 'uploaded_at' as SortField
   }),
 
   getters: {
-    byStatus: (state) => (status: ExamStatus) =>
-      status === 'pending' ? state.pending : status === 'processing' ? state.processing : state.finished
+    byStatus: (state) => (status: ListedStatus): ExamListItem[] => {
+      const list = status === 'pending' ? state.pending : state.finished
+      if (status === 'pending' && state.sortBy === 'finished_at') return list
+      return [...list].sort((a, b) => (b[state.sortBy] ?? '').localeCompare(a[state.sortBy] ?? ''))
+    }
   },
 
   actions: {
+    setSortBy(field: SortField) {
+      this.sortBy = field
+    },
+
     async fetchLists() {
       this.loadingLists = true
       const supabase = useSupabase()
@@ -48,7 +68,6 @@ export const useDocumentsStore = defineStore('documents', {
 
         const rows = (data ?? []).map(row => rowToListItem(row))
         this.pending = rows.filter(r => r.status === 'pending')
-        this.processing = rows.filter(r => r.status === 'processing')
         this.finished = rows.filter(r => r.status === 'finished')
         this.recent = rows.slice(0, 5)
         this.offline = false
